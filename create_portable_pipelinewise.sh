@@ -111,16 +111,16 @@ function install_connector() {
   info "Installing $name ..."
   case "$name" in
     tap-postgres)
-      # Install psycopg2-binary first with compatible version
-      "$venv_path/bin/pip" install "psycopg2-binary>=2.9.5" || error_exit "Failed to install psycopg2-binary."
-      # Then install tap-postgres without dependencies
+      # Install tap-postgres without dependencies to avoid psycopg2-binary version conflicts
       "$venv_path/bin/pip" install --no-deps "pipelinewise-tap-postgres==1.8.4" || error_exit "Failed to install tap-postgres."
+      # Force install compatible psycopg2-binary version
+      "$venv_path/bin/pip" install --upgrade --force-reinstall "psycopg2-binary>=2.9.5" || error_exit "Failed to upgrade psycopg2-binary."
       ;;
     target-postgres)
-      # Install psycopg2-binary first with compatible version
-      "$venv_path/bin/pip" install "psycopg2-binary>=2.9.5" || error_exit "Failed to install psycopg2-binary."
-      # Then install target-postgres without dependencies
+      # Install target-postgres without dependencies to avoid psycopg2-binary version conflicts
       "$venv_path/bin/pip" install --no-deps "pipelinewise-target-postgres==2.1.2" || error_exit "Failed to install target-postgres."
+      # Force install compatible psycopg2-binary version
+      "$venv_path/bin/pip" install --upgrade --force-reinstall "psycopg2-binary>=2.9.5" || error_exit "Failed to upgrade psycopg2-binary."
       ;;
     transform-field)
       "$venv_path/bin/pip" install "pipelinewise-transform-field" || error_exit "Failed to install transform-field."

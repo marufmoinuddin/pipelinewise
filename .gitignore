@@ -27,8 +27,8 @@ build/
 *.log
 
 # Portable pipelinewise
-portable-pipelinewise/
-portable-pipelinewise.run
+portable-pipelinewise*/
+portable-pipelinewise*.run
 
 # Singer Tap state
 .state.json

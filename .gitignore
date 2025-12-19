@@ -27,6 +27,8 @@ build/
 *.eggs
 *.log
 *log*
+test*.json
+
 
 # Portable pipelinewise
 portable-pipelinewise*/

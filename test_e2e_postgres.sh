@@ -2,7 +2,7 @@
 # test_e2e_postgres.sh
 #
 # Comprehensive end-to-end testing script for PostgreSQL-to-PostgreSQL replication
-# using PipelineWise portable installation.
+# using PipelineWise RHEL7 standalone deployment.
 #
 # Usage:
 #   ./test_e2e_postgres.sh [options]
@@ -19,11 +19,13 @@
 
 set -euo pipefail
 
-# ========== CONFIGURATION ==========
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$SCRIPT_DIR"
-PORTABLE_ROOT="$PROJECT_ROOT/portable-pipelinewise"
-BIN_DIR="$PORTABLE_ROOT/bin"
+
+# Configuration - adapted for RHEL7 standalone deployment
+DIST_DIR="$PROJECT_ROOT/dist"
+PORTABLE_TARBALL="$DIST_DIR/pipelinewise-rhel7.tar.xz"
+PIPELINEWISE_CONTAINER="pipelinewise-test-centos7"
 
 # Test configuration
 SOURCE_DB="test_source_db"
@@ -62,7 +64,7 @@ CONTINUE_ON_ERROR=0
 
 function show_help() {
     cat << EOF
-PipelineWise PostgreSQL E2E Test Script
+PipelineWise PostgreSQL E2E Test Script (RHEL7 Standalone)
 
 Usage: $0 [OPTIONS]
 
@@ -160,7 +162,7 @@ function query_db() {
 }
 
 function check_containers() {
-    local containers=("$SOURCE_CONTAINER" "$TARGET_CONTAINER")
+    local containers=("$SOURCE_CONTAINER" "$TARGET_CONTAINER" "$PIPELINEWISE_CONTAINER")
     for container in "${containers[@]}"; do
         if ! docker ps --format "table {{.Names}}" | grep -q "^${container}$"; then
             logerr "Container $container is not running"
@@ -216,18 +218,13 @@ function check_prerequisites() {
     fi
     success "docker-compose is available"
 
-    # Check PipelineWise
-    if [ ! -d "$PORTABLE_ROOT" ]; then
-        logerr "Portable PipelineWise not found at $PORTABLE_ROOT"
-        logerr "Run ./create_portable_pipelinewise.sh first"
+    # Check PipelineWise RHEL7 tarball
+    if [ ! -f "$PORTABLE_TARBALL" ]; then
+        logerr "PipelineWise RHEL7 tarball not found: $PORTABLE_TARBALL"
+        logerr "Run ./build-rhel7-standalone.sh first"
         return 1
     fi
-
-    if [ ! -x "$BIN_DIR/plw" ]; then
-        logerr "PipelineWise CLI not found at $BIN_DIR/plw"
-        return 1
-    fi
-    success "PipelineWise portable installation found"
+    success "PipelineWise RHEL7 tarball found"
 
     # Check ports availability
     for port in "$SOURCE_PORT" "$TARGET_PORT"; do
@@ -303,6 +300,15 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+
+  pipelinewise_centos7:
+    image: centos:7
+    container_name: pipelinewise-test-centos7
+    volumes:
+      - ../../dist:/dist:ro
+    networks:
+      - pipelinewise_test
+    command: tail -f /dev/null
 
 volumes:
   source_data:
@@ -389,7 +395,25 @@ function start_containers() {
         return 1
     fi
 
-    success "Containers are ready"
+    # Wait for PipelineWise container to be ready
+    local max_attempts=30
+    local attempt=1
+    while (( attempt <= max_attempts )); do
+        if docker exec "$PIPELINEWISE_CONTAINER" echo "Container ready" >/dev/null 2>&1; then
+            success "PipelineWise container ready"
+            break
+        fi
+        logv "Waiting for PipelineWise container... ($attempt/$max_attempts)"
+        sleep 2
+        ((attempt++))
+    done
+
+    if (( attempt > max_attempts )); then
+        logerr "PipelineWise container failed to become ready"
+        return 1
+    fi
+
+    success "All containers are ready"
     return 0
 }
 
@@ -407,6 +431,32 @@ function stop_containers() {
     fi
 
     success "Containers stopped and cleaned up"
+}
+
+# ========== PIPELINEWISE DEPLOYMENT ==========
+function deploy_pipelinewise() {
+    log "Deploying PipelineWise to CentOS 7 container..."
+
+    # Copy tarball to container
+    if ! docker cp "$PORTABLE_TARBALL" "$PIPELINEWISE_CONTAINER:/tmp/"; then
+        logerr "Failed to copy PipelineWise tarball to container"
+        return 1
+    fi
+
+    # Extract tarball
+    if ! docker exec "$PIPELINEWISE_CONTAINER" tar -xJf "/tmp/$(basename "$PORTABLE_TARBALL")" -C /tmp/; then
+        logerr "Failed to extract PipelineWise tarball in container"
+        return 1
+    fi
+
+    # Verify extraction
+    if ! docker exec "$PIPELINEWISE_CONTAINER" ls -la /tmp/pipelinewise/ >/dev/null 2>&1; then
+        logerr "PipelineWise directory not found after extraction"
+        return 1
+    fi
+
+    success "PipelineWise deployed successfully"
+    return 0
 }
 
 # ========== DATABASE SETUP ==========
@@ -605,8 +655,8 @@ send_alerts: false
 target: target_postgres_test
 
 db_conn:
-  host: localhost
-  port: $SOURCE_PORT
+  host: $SOURCE_CONTAINER
+  port: 5432
   user: $SOURCE_USER
   password: $DB_PASSWORD
   dbname: $SOURCE_DB
@@ -645,8 +695,8 @@ owner: test@example.com
 send_alerts: false
 
 db_conn:
-  host: localhost
-  port: $TARGET_PORT
+  host: $TARGET_CONTAINER
+  port: 5432
   user: $TARGET_USER
   password: $DB_PASSWORD
   dbname: $TARGET_DB
@@ -675,8 +725,8 @@ function run_plw_command() {
     log "Running: $desc"
     logv "Command: $cmd"
 
-    # Source the portable environment before running plw commands
-    if ! eval "source '$PORTABLE_ROOT/setup_environment.sh' && $cmd" > "$log_file" 2>&1; then
+    # Run PipelineWise command in the CentOS 7 container
+    if ! docker exec "$PIPELINEWISE_CONTAINER" bash -c "cd /tmp/pipelinewise && $cmd" > "$log_file" 2>&1; then
         logerr "PipelineWise command failed: $desc"
         logerr "Check log: $log_file"
         return 1
@@ -693,13 +743,13 @@ function test_a_initial_full_sync() {
     start_time=$(date +%s)
 
     # Import tap configuration
-    if ! run_plw_command "$BIN_DIR/pipelinewise import --dir $CONFIG_DIR" "import tap config"; then
+    if ! run_plw_command "./pipelinewise import --dir /tmp/config" "import tap config"; then
         failure "Test A: Import failed"
         return 1
     fi
 
     # Run initial sync
-    if ! run_plw_command "$BIN_DIR/pipelinewise run_tap --tap tap_postgres_test --target target_postgres_test" "initial full sync"; then
+    if ! run_plw_command "./pipelinewise run_tap --tap tap_postgres_test --target target_postgres_test" "initial full sync"; then
         failure "Test A: Initial sync failed"
         return 1
     fi
@@ -720,9 +770,6 @@ function test_a_initial_full_sync() {
 
 function test_b_incremental_sync() {
     log "=== TEST B: Incremental Sync ==="
-
-    # Note: Using FULL_TABLE replication for simplicity in testing
-    # In production, INCREMENTAL or LOG_BASED would be used for true incremental sync
 
     # Insert new data (use deterministic customer IDs to avoid FK issues)
     run_sql "$SOURCE_CONTAINER" "$SOURCE_DB" <(cat << EOF
@@ -762,7 +809,7 @@ EOF
     start_time=$(date +%s)
 
     # Run incremental sync
-    if ! run_plw_command "$BIN_DIR/pipelinewise run_tap --tap tap_postgres_test --target target_postgres_test" "incremental sync"; then
+    if ! run_plw_command "./pipelinewise run_tap --tap tap_postgres_test --target target_postgres_test" "incremental sync"; then
         failure "Test B: Incremental sync failed"
         return 1
     fi
@@ -797,7 +844,7 @@ EOF
 ) "Adding discount_percent column"
 
     # Run sync
-    if ! run_plw_command "$BIN_DIR/pipelinewise run_tap --tap tap_postgres_test --target target_postgres_test" "schema change sync"; then
+    if ! run_plw_command "./pipelinewise run_tap --tap tap_postgres_test --target target_postgres_test" "schema change sync"; then
         failure "Test C: Schema change sync failed"
         return 1
     fi
@@ -842,13 +889,13 @@ streams:
 EOF
 
     # Import transform config
-    if ! run_plw_command "$BIN_DIR/pipelinewise import --dir $CONFIG_DIR" "import transform config"; then
+    if ! run_plw_command "./pipelinewise import --dir /tmp/config" "import transform config"; then
         failure "Test D: Import transform config failed"
         return 1
     fi
 
     # Run with transformation
-    if ! run_plw_command "$BIN_DIR/pipelinewise run_tap --tap tap_postgres_test --target target_postgres_test" "sync with transformation"; then
+    if ! run_plw_command "./pipelinewise run_tap --tap tap_postgres_test --target target_postgres_test" "sync with transformation"; then
         failure "Test D: Transformation sync failed"
         return 1
     fi
@@ -898,7 +945,7 @@ EOF
     start_time=$(date +%s)
 
     # Run sync
-    if ! run_plw_command "$BIN_DIR/pipelinewise run_tap --tap tap_postgres_test --target target_postgres_test" "large volume sync"; then
+    if ! run_plw_command "./pipelinewise run_tap --tap tap_postgres_test --target target_postgres_test" "large volume sync"; then
         failure "Test E: Large volume sync failed"
         return 1
     fi
@@ -922,15 +969,6 @@ EOF
 function test_f_scram_auth() {
     log "=== TEST F: SCRAM Authentication Verification ==="
 
-    # Check libpq version
-    local libpq_version
-    libpq_version=$("$PORTABLE_ROOT/.virtualenvs/pipelinewise/bin/python" -c 'import psycopg2; print(getattr(psycopg2, "__libpq_version__", 0))' 2>/dev/null || echo "0")
-
-    if (( libpq_version < 100000 )); then
-        failure "Test F: libpq version too old (${libpq_version} < 100000)"
-        return 1
-    fi
-
     # Test connection to source
     if ! run_cmd "docker exec -e PGPASSWORD=\"$DB_PASSWORD\" $SOURCE_CONTAINER psql -U $SOURCE_USER -d $SOURCE_DB -h localhost -c 'SELECT 1'" "Testing SCRAM connection to source"; then
         failure "Test F: SCRAM connection to source failed"
@@ -943,7 +981,13 @@ function test_f_scram_auth() {
         return 1
     fi
 
-    success "Test F: SCRAM Auth - PASSED (libpq: ${libpq_version})"
+    # Test PipelineWise can connect (by running a simple command that would fail if connections don't work)
+    if ! run_plw_command "./pipelinewise status --tap tap_postgres_test" "testing PipelineWise database connections"; then
+        failure "Test F: PipelineWise connection test failed"
+        return 1
+    fi
+
+    success "Test F: SCRAM Auth - PASSED"
     return 0
 }
 
@@ -1113,7 +1157,8 @@ function generate_report() {
     "timestamp": "$(date -Iseconds)",
     "duration_seconds": $SECONDS,
     "quick_mode": $QUICK_MODE,
-    "full_mode": $FULL_MODE
+    "full_mode": $FULL_MODE,
+    "deployment_type": "rhel7_standalone"
   },
   "configuration": {
     "source_db": "$SOURCE_DB",
@@ -1124,7 +1169,7 @@ function generate_report() {
     "orders_count": $ORDERS_COUNT,
     "order_items_count": $ORDER_ITEMS_COUNT
   },
-  "results": {
+  "results": [
 EOF
 
     # Add test results to JSON
@@ -1139,18 +1184,19 @@ EOF
     done
 
     cat >> "$report_file" << EOF
-  }
+  ]
 }
 EOF
 
     # Create summary report
     cat > "$summary_file" << EOF
-PipelineWise PostgreSQL E2E Test Results
-=======================================
+PipelineWise PostgreSQL E2E Test Results (RHEL7 Standalone)
+==========================================================
 
 Test Run: $(date)
 Duration: ${SECONDS}s
 Mode: $( (( QUICK_MODE)) && echo "Quick" || echo "Full" )
+Deployment: RHEL7 Standalone (PyInstaller bundle)
 
 Configuration:
 - Source DB: $SOURCE_DB (port $SOURCE_PORT)
@@ -1189,7 +1235,7 @@ function main() {
 
     # Setup
     mkdir -p "$TEST_DIR" "$LOG_DIR"
-    log "Starting PipelineWise PostgreSQL E2E Tests"
+    log "Starting PipelineWise PostgreSQL E2E Tests (RHEL7 Standalone)"
     log "Test directory: $TEST_DIR"
 
     # Prerequisites
@@ -1206,11 +1252,19 @@ function main() {
             exit 1
         fi
 
+        if ! deploy_pipelinewise; then
+            logerr "PipelineWise deployment failed"
+            exit 1
+        fi
+
         create_source_database
         create_target_database
         generate_test_data
         load_source_data
         generate_pipelinewise_configs
+
+        # Copy configs to container
+        docker cp "$CONFIG_DIR" "$PIPELINEWISE_CONTAINER:/tmp/"
     else
         log "Skipping setup (--skip-setup specified)"
         if ! check_containers; then

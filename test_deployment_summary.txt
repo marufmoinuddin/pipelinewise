@@ -1,15 +1,15 @@
 PipelineWise RHEL7 Deployment Test Results
 =========================================
 
-Test Run: Friday 19 December 2025 11:32:08 PM +06
-Duration: 13s
+Test Run: Friday 19 December 2025 11:34:36 PM +06
+Duration: 15s
 Container: pipelinewise-test-centos7
 Tarball: pipelinewise-rhel7.tar.xz
 Size: 116MB
 
 Test Results:
-system_compatibility ❌ FAILED
-deployment_extraction ❌ FAILED
+system_compatibility ✅ PASSED
+deployment_extraction ✅ PASSED
 cli_functionality    ✅ PASSED
 python_modules       ✅ PASSED
 scram_auth           ✅ PASSED

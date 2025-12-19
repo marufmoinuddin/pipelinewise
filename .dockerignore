@@ -16,7 +16,21 @@ dev-project
 docs
 scripts
 tests
-test-reports
+test_results
+.tox
+dist
+build
+*.pyc
+*.pyo
+*.pyd
+*.log
+*.sqlite3
+*.db
+*.pot
+*.mo
+*.swp
+./test_results
+test_results/logs/command.log
 
 .coveragerc
 .pre-commit-config.yaml

@@ -14,7 +14,21 @@ __pycache__/
 .coverage.*
 coverage.log
 coverage_html
-test-reports/
+test_results/
+.tox/
+pip-log.txt
+pip-delete-this-directory.txt
+htmlcov/
+dist/
+build/
+.eggs/
+*.egg
+*.eggs
+*.log
+
+# Portable pipelinewise
+portable-pipelinewise/
+portable-pipelinewise.run
 
 # Singer Tap state
 .state.json

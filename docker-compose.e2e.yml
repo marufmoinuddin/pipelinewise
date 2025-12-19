@@ -1,0 +1,50 @@
+version: '3.8'
+
+services:
+  source_postgres:
+    image: postgres:13
+    container_name: pipelinewise_test_source
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres_password
+    ports:
+      - "5433:5432"
+    volumes:
+      - ./init-source.sql:/docker-entrypoint-initdb.d/init-source.sql
+      - source_data:/var/lib/postgresql/data
+    networks:
+      - pipelinewise_test
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  target_postgres:
+    image: postgres:13
+    container_name: pipelinewise_test_target
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres_password
+    ports:
+      - "5434:5432"
+    volumes:
+      - ./init-target.sql:/docker-entrypoint-initdb.d/init-target.sql
+      - target_data:/var/lib/postgresql/data
+    networks:
+      - pipelinewise_test
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  source_data:
+  target_data:
+
+networks:
+  pipelinewise_test:
+    driver: bridge

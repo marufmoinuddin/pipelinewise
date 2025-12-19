@@ -113,12 +113,16 @@ function install_connector() {
     tap-postgres)
       # Install tap-postgres without dependencies to avoid psycopg2-binary version conflicts
       "$venv_path/bin/pip" install --no-deps "pipelinewise-tap-postgres==1.8.4" || error_exit "Failed to install tap-postgres."
+      # Install required dependencies
+      "$venv_path/bin/pip" install "pipelinewise-singer-python==1.3.0" strict-rfc3339 || error_exit "Failed to install tap-postgres dependencies."
       # Force install compatible psycopg2-binary version
       "$venv_path/bin/pip" install --upgrade --force-reinstall "psycopg2-binary>=2.9.5" || error_exit "Failed to upgrade psycopg2-binary."
       ;;
     target-postgres)
       # Install target-postgres without dependencies to avoid psycopg2-binary version conflicts
       "$venv_path/bin/pip" install --no-deps "pipelinewise-target-postgres==2.1.2" || error_exit "Failed to install target-postgres."
+      # Install required dependencies
+      "$venv_path/bin/pip" install "pipelinewise-singer-python==1.3.0" "joblib==1.2.0" inflection || error_exit "Failed to install target-postgres dependencies."
       # Force install compatible psycopg2-binary version
       "$venv_path/bin/pip" install --upgrade --force-reinstall "psycopg2-binary>=2.9.5" || error_exit "Failed to upgrade psycopg2-binary."
       ;;

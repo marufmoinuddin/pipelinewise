@@ -10,7 +10,6 @@ from datetime import datetime
 from decimal import Decimal
 from tempfile import mkstemp
 
-from joblib import Parallel, delayed, parallel_backend
 from jsonschema import Draft7Validator, FormatChecker
 from singer import get_logger
 
@@ -284,15 +283,34 @@ def flush_streams(
         streams_to_flush = streams.keys()
 
     # Single-host, thread-based parallelism
-    with parallel_backend('threading', n_jobs=parallelism):
-        Parallel()(delayed(load_stream_batch)(
-            stream=stream,
-            records_to_load=streams[stream],
-            row_count=row_count,
-            db_sync=stream_to_sync[stream],
-            delete_rows=config.get('hard_delete'),
-            temp_dir=config.get('temp_dir')
-        ) for stream in streams_to_flush)
+    try:
+        import joblib
+        from joblib import Parallel, delayed, parallel_backend
+        has_joblib = True
+    except ImportError:
+        has_joblib = False
+
+    if has_joblib and parallelism > 1:
+        with parallel_backend('threading', n_jobs=parallelism):
+            Parallel()(delayed(load_stream_batch)(
+                stream=stream,
+                records_to_load=streams[stream],
+                row_count=row_count,
+                db_sync=stream_to_sync[stream],
+                delete_rows=config.get('hard_delete'),
+                temp_dir=config.get('temp_dir')
+            ) for stream in streams_to_flush)
+    else:
+        # Fallback to sequential processing when joblib is not available or parallelism is 1
+        for stream in streams_to_flush:
+            load_stream_batch(
+                stream=stream,
+                records_to_load=streams[stream],
+                row_count=row_count,
+                db_sync=stream_to_sync[stream],
+                delete_rows=config.get('hard_delete'),
+                temp_dir=config.get('temp_dir')
+            )
 
     # reset flushed stream records to empty to avoid flushing same records
     for stream in streams_to_flush:

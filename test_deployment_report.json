@@ -1,0 +1,46 @@
+{
+  "deployment_test": {
+    "timestamp": "2025-12-19T23:32:08+06:00",
+    "duration_seconds": 13,
+    "container": "pipelinewise-test-centos7",
+    "tarball": "pipelinewise-rhel7.tar.xz",
+    "tarball_size_mb": 116
+  },
+  "tests": [
+    {
+      "name": "system_compatibility",
+      "status": "FAILED",
+      "description": "CentOS 7 system compatibility and GLIBC requirements"
+    },
+    {
+      "name": "deployment_extraction",
+      "status": "FAILED",
+      "description": "Tarball extraction and basic file structure"
+    },
+    {
+      "name": "cli_functionality",
+      "status": "PASSED",
+      "description": "PipelineWise CLI commands and help system"
+    },
+    {
+      "name": "python_modules",
+      "status": "PASSED",
+      "description": "Python module imports and dependencies"
+    },
+    {
+      "name": "scram_auth",
+      "status": "PASSED",
+      "description": "SCRAM-SHA-256 authentication support"
+    },
+    {
+      "name": "connectors",
+      "status": "PASSED",
+      "description": "Individual connector functionality"
+    },
+    {
+      "name": "performance",
+      "status": "PASSED",
+      "description": "Startup time and memory usage"
+    }
+  ]
+}

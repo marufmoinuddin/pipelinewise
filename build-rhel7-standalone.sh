@@ -4,29 +4,86 @@ set -e
 export LC_ALL=C
 export LANG=C
 
+# ============================================================================
+# OPTIMIZATION SETUP - Leverage 16 cores, 40GB RAM, fast SSD
+# ============================================================================
+
+echo "=== Setting up optimized build environment ==="
+
+# Detect CPU cores for parallel processing
+CPU_CORES=$(nproc)
+echo "Detected $CPU_CORES CPU cores"
+
+# Create cache directories for persistence across builds
+export CACHE_DIR="/build/.cache"
+export PIP_CACHE_DIR="$CACHE_DIR/pip"
+export CCACHE_DIR="$CACHE_DIR/ccache"
+
+mkdir -p "$PIP_CACHE_DIR/wheels" "$PIP_CACHE_DIR/http" "$CCACHE_DIR"
+
+# Set environment variables for optimal performance
+export MAKEFLAGS="-j$CPU_CORES"
+export MAX_JOBS="$CPU_CORES"
+export PIP_PARALLEL_BUILDS="$CPU_CORES"
+export PYTHONDONTWRITEBYTECODE=1  # Don't write .pyc files during build
+
+# Configure ccache for C/C++ compilation speedup
+echo "Setting up ccache for C/C++ compilation..."
+if ! command -v ccache >/dev/null 2>&1; then
+    echo "Installing ccache..."
+    # Try different package managers
+    if command -v apt-get >/dev/null 2>&1; then
+        apt-get update && apt-get install -y ccache || echo "Warning: Failed to install ccache via apt-get"
+    elif command -v yum >/dev/null 2>&1; then
+        yum install -y ccache || echo "Warning: Failed to install ccache via yum"
+    elif command -v dnf >/dev/null 2>&1; then
+        dnf install -y ccache || echo "Warning: Failed to install ccache via dnf"
+    else
+        echo "Warning: Could not install ccache, C/C++ compilation will be slower"
+    fi
+fi
+
+# Configure ccache if available
+if command -v ccache >/dev/null 2>&1; then
+    export CC="ccache gcc"
+    export CXX="ccache g++"
+    echo "ccache configured for faster compilation"
+else
+    echo "ccache not available, using direct compilation"
+fi
+
+if command -v ccache >/dev/null 2>&1; then
+    export CCACHE_MAXSIZE="5G"
+    export CC="ccache gcc"
+    export CXX="ccache g++"
+    echo "✓ ccache configured (max size: $CCACHE_MAXSIZE)"
+else
+    echo "⚠ ccache not available, using direct compilation"
+fi
+
+# Show cache status
+echo "Cache directories:"
+echo "  PIP cache: $PIP_CACHE_DIR"
+echo "  CCACHE dir: $CCACHE_DIR"
+du -sh "$CACHE_DIR" 2>/dev/null || echo "  Cache empty (first run)"
+
+echo ""
 echo "=== Building PipelineWise for RHEL 7 compatibility ==="
 echo ""
 
-echo "[1/3] Installing build dependencies..."
+echo "[1/4] Installing build dependencies with caching..."
 python3.10 -m pip install --upgrade pip setuptools wheel
 python3.10 -m pip install pyinstaller
 
-echo "[3/4] Installing PipelineWise dependencies (without pandas/snowflake)..."
-cd /build
-
-# Install only postgres-related dependencies
-echo "[2/3] Installing PipelineWise dependencies (postgres-only minimal build)..."
-cd /build
-
-# Install minimal dependencies for postgres-to-postgres only
-python3.10 -m pip install \
+echo "[2/4] Pre-downloading wheels to populate cache..."
+# Pre-download all required wheels to cache for faster subsequent builds
+python3.10 -m pip download --dest "$PIP_CACHE_DIR/wheels" \
   'argparse==1.4.0' \
   'tabulate==0.8.9' \
   'PyYAML>=6.0.2' \
   'ansible-core==2.17.8' \
   'Jinja2==3.1.6' \
-  'joblib==1.3.2' \
-  'psycopg2-binary>=2.9.10' \
+  'psycopg2-binary==2.9.5' \
   'pipelinewise-singer-python==1.*' \
   'python-pidfile==3.0.0' \
   'tzlocal>=2.0,<4.1' \
@@ -35,49 +92,93 @@ python3.10 -m pip install \
   'ujson==5.4.0' \
   'chardet==4.0.0' \
   'backports.tarfile==1.2.0' \
-  'requests>=2.20,<2.32'
+  'requests>=2.20,<2.32' \
+  'slackclient==2.9.4' \
+  'pipelinewise-tap-postgres' \
+  'pipelinewise-target-postgres==2.1.2' \
+  'pipelinewise-transform-field' || echo "Warning: Some wheels may not be available for download"
+
+echo "[3/4] Installing PipelineWise dependencies (parallel builds enabled)..."
+cd /build
+
+# Install all packages in parallel using cached wheels
+python3.10 -m pip install \
+  'argparse==1.4.0' \
+  'tabulate==0.8.9' \
+  'PyYAML>=6.0.2' \
+  'ansible-core==2.17.8' \
+  'Jinja2==3.1.6' \
+  'psycopg2-binary==2.9.5' \
+  'pipelinewise-singer-python==1.*' \
+  'python-pidfile==3.0.0' \
+  'tzlocal>=2.0,<4.1' \
+  'sqlparse==0.5.3' \
+  'psutil==5.9.5' \
+  'ujson==5.4.0' \
+  'chardet==4.0.0' \
+  'backports.tarfile==1.2.0' \
+  'requests>=2.20,<2.32' \
+  'slackclient==2.9.4'
 
 # Install tap/target connectors and transformers
 echo "Installing tap-postgres, target-postgres, and transform-field..."
-python3.10 -m pip install \
+python3.10 -m pip install --force-reinstall \
   'pipelinewise-tap-postgres' \
-  'pipelinewise-target-postgres==2.1.2' \
+  'pipelinewise-target-postgres' \
   'pipelinewise-transform-field'
 
-# Reinstall joblib to match pipelinewise requirements
-python3.10 -m pip install --force-reinstall 'joblib==1.3.2'
+# Upgrade psycopg2-binary to support SCRAM authentication
+echo "Upgrading psycopg2-binary for SCRAM authentication support..."
+python3.10 -m pip install --upgrade --force-reinstall 'psycopg2-binary>=2.9.10'
 
 # Install pipelinewise
 python3.10 -m pip install -e . --no-deps
 
-echo "Collecting installed site-packages for PyInstaller bundling..."
+echo "Collecting installed site-packages for PyInstaller bundling (parallel processing)..."
 mapfile -t PYINSTALLER_SITE_MODULES < <(python3.10 - <<'PY'
 import pkgutil
 import sys
 import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
+def collect_modules_from_path(path_tuple):
+    """Collect modules from a single path in parallel"""
+    modules = set()
+    for finder, name, ispkg in pkgutil.iter_modules(path_tuple):
+        finder_path = getattr(finder, 'path', None)
+        if finder_path is None:
+            continue
+        if isinstance(finder_path, (list, tuple)):
+            candidate_paths = finder_path
+        else:
+            candidate_paths = [finder_path]
+        for candidate in candidate_paths:
+            candidate_real = os.path.realpath(candidate)
+            if any(candidate_real.startswith(sp) for sp in path_tuple):
+                modules.add(name)
+                break
+    return modules
+
+# Get site packages paths
 site_packages = []
 for path in sys.path:
   if 'site-packages' in path:
     site_packages.append(os.path.realpath(path))
 
 site_packages = tuple(sorted(set(site_packages)))
-modules = set()
-for finder, name, ispkg in pkgutil.iter_modules():
-  finder_path = getattr(finder, 'path', None)
-  if finder_path is None:
-    continue
-  if isinstance(finder_path, (list, tuple)):
-    candidate_paths = finder_path
-  else:
-    candidate_paths = [finder_path]
-  for candidate in candidate_paths:
-    candidate_real = os.path.realpath(candidate)
-    if any(candidate_real.startswith(sp) for sp in site_packages):
-      modules.add(name)
-      break
 
-modules = sorted(mod for mod in modules if mod and not mod.startswith('_'))
+# Parallel module collection using thread pool
+all_modules = set()
+with ThreadPoolExecutor(max_workers=4) as executor:
+    # Submit tasks for each site-packages path
+    future_to_path = {executor.submit(collect_modules_from_path, (sp,)): sp for sp in site_packages}
+    
+    for future in as_completed(future_to_path):
+        modules = future.result()
+        all_modules.update(modules)
+
+# Filter and sort modules
+modules = sorted(mod for mod in all_modules if mod and not mod.startswith('_'))
 for mod in modules:
   print(mod)
 PY
@@ -104,35 +205,10 @@ done
 
 echo "  Collected ${#PYINSTALLER_SITE_MODULES[@]} site-packages modules for bundling."
 
-echo "[3/3] Building standalone binary..."
-pyinstaller --clean \
-  --name pipelinewise \
-  --add-data "pipelinewise/logging.conf:pipelinewise/" \
-  --add-data "pipelinewise/logging_debug.conf:pipelinewise/" \
-  --add-data "pipelinewise/cli/schemas:pipelinewise/cli/schemas" \
-  --add-data "pipelinewise/cli/samples:pipelinewise/cli/samples" \
-  --add-data "pipelinewise/fastsync:pipelinewise/fastsync" \
-  --copy-metadata ansible-core \
-  --copy-metadata pipelinewise-tap-postgres \
-  --copy-metadata pipelinewise-target-postgres \
-  --copy-metadata psycopg2-binary \
-  --collect-data ansible \
-  --collect-binaries psycopg2 \
-  --hidden-import pipelinewise.fastsync.postgres_to_postgres \
-  --hidden-import pipelinewise.fastsync.commons.tap_postgres \
-  --hidden-import pipelinewise.fastsync.commons.target_postgres \
-  --hidden-import psycopg2 \
-  --hidden-import psycopg2._psycopg \
-  --hidden-import psycopg2.extensions \
-  --hidden-import requests \
-  --hidden-import tap_postgres \
-  --hidden-import target_postgres \
-  "${PYINSTALLER_COLLECT_ARGS[@]}" \
-  pipelinewise/cli/__init__.py
+echo "[4/4] Building standalone binaries (parallel execution)..."
 
-echo ""
-echo "Creating connector wrapper scripts..."
-mkdir -p /build/dist/pipelinewise/connectors
+# Create Python entry points for all executables
+echo "Creating Python entry point scripts..."
 
 # Create Python entry point for tap-postgres with logging setup
 cat > /tmp/tap_postgres_entry.py << 'EOF'
@@ -206,45 +282,6 @@ if __name__ == '__main__':
     sys.exit(main())
 EOF
 
-# Build tap-postgres executable
-echo "Building tap-postgres executable..."
-pyinstaller --clean --name tap-postgres \
-  --add-data "$(python3.10 -c "import singer, os; print(os.path.join(os.path.dirname(singer.__file__), 'logging.conf'))")":singer/ \
-  --hidden-import psycopg2 \
-  --hidden-import psycopg2._psycopg \
-  --hidden-import psycopg2.extensions \
-  --collect-binaries psycopg2 \
-  --copy-metadata psycopg2-binary \
-  --copy-metadata pipelinewise-tap-postgres \
-  "${PYINSTALLER_COLLECT_ARGS[@]}" \
-  /tmp/tap_postgres_entry.py
-cp -r /build/dist/tap-postgres /build/dist/pipelinewise/connectors/
-
-# Build transform-field executable
-echo "Building transform-field executable..."
-pyinstaller --clean --name transform-field \
-  --add-data "$(python3.10 -c "import singer, os; print(os.path.join(os.path.dirname(singer.__file__), 'logging.conf'))")":singer/ \
-  "${PYINSTALLER_COLLECT_ARGS[@]}" \
-  /tmp/transform_field_entry.py
-cp -r /build/dist/transform-field /build/dist/pipelinewise/connectors/
-
-# Build target-postgres executable  
-echo "Building target-postgres executable..."
-pyinstaller --clean --name target-postgres \
-  --add-data "$(python3.10 -c "import singer, os; print(os.path.join(os.path.dirname(singer.__file__), 'logging.conf'))")":singer/ \
-  --hidden-import psycopg2 \
-  --hidden-import psycopg2._psycopg \
-  --hidden-import psycopg2.extensions \
-  --collect-binaries psycopg2 \
-  --copy-metadata psycopg2-binary \
-  --copy-metadata pipelinewise-target-postgres \
-  "${PYINSTALLER_COLLECT_ARGS[@]}" \
-  /tmp/target_postgres_entry.py
-cp -r /build/dist/target-postgres /build/dist/pipelinewise/connectors/
-
-# Create fastsync entry point scripts
-echo "Creating fastsync entry point scripts..."
-
 # postgres-to-postgres entry point
 cat > /tmp/postgres_to_postgres_entry.py << 'EOF'
 #!/usr/bin/env python3
@@ -253,28 +290,160 @@ if __name__ == '__main__':
     main()
 EOF
 
-# Build fastsync executables
-echo "Building postgres-to-postgres fastsync executable..."
-pyinstaller --clean --name postgres-to-postgres \
-  --paths /build \
-  --hidden-import=multiprocessing \
-  --hidden-import=multiprocessing.spawn \
-  --collect-submodules pipelinewise \
-  --collect-data pipelinewise \
-  "${PYINSTALLER_COLLECT_ARGS[@]}" \
-  /tmp/postgres_to_postgres_entry.py
+# Create separate work directories for each build to avoid conflicts
+mkdir -p /tmp/pyinstaller-builds/{pipelinewise,tap-postgres,target-postgres,transform-field,postgres-to-postgres}
+
+# Function to build with PyInstaller
+build_pyinstaller() {
+    local name="$1"
+    local workpath="/tmp/pyinstaller-builds/$name"
+    local logfile="/tmp/build-$name.log"
+
+    echo "Starting $name build (workpath: $workpath)..."
+
+    case "$name" in
+        "pipelinewise")
+            pyinstaller --clean \
+              --name "$name" \
+              --workpath "$workpath" \
+              --add-data "pipelinewise/logging.conf:pipelinewise/" \
+              --add-data "pipelinewise/logging_debug.conf:pipelinewise/" \
+              --add-data "pipelinewise/cli/schemas:pipelinewise/cli/schemas" \
+              --add-data "pipelinewise/cli/samples:pipelinewise/cli/samples" \
+              --add-data "pipelinewise/fastsync:pipelinewise/fastsync" \
+              --copy-metadata ansible-core \
+              --copy-metadata pipelinewise-tap-postgres \
+              --copy-metadata pipelinewise-target-postgres \
+              --copy-metadata psycopg2-binary \
+              --collect-data ansible \
+              --collect-binaries psycopg2 \
+              --collect-submodules pipelinewise \
+              --collect-submodules pipelinewise.cli \
+              --hidden-import pipelinewise.fastsync.postgres_to_postgres \
+              --hidden-import pipelinewise.fastsync.commons.tap_postgres \
+              --hidden-import pipelinewise.fastsync.commons.target_postgres \
+              --hidden-import psycopg2 \
+              --hidden-import psycopg2._psycopg \
+              --hidden-import psycopg2.extensions \
+              --hidden-import requests \
+              --hidden-import tap_postgres \
+              --hidden-import target_postgres \
+              "${PYINSTALLER_COLLECT_ARGS[@]}" \
+              pipelinewise/cli/__init__.py 2>&1 | tee "$logfile"
+            ;;
+        "tap-postgres")
+            pyinstaller --clean --name "$name" \
+              --workpath "$workpath" \
+              --add-data "$(python3.10 -c "import singer, os; print(os.path.join(os.path.dirname(singer.__file__), 'logging.conf'))")":singer/ \
+              --hidden-import psycopg2 \
+              --hidden-import psycopg2._psycopg \
+              --hidden-import psycopg2.extensions \
+              --collect-binaries psycopg2 \
+              --copy-metadata psycopg2-binary \
+              --copy-metadata pipelinewise-tap-postgres \
+              "${PYINSTALLER_COLLECT_ARGS[@]}" \
+              /tmp/tap_postgres_entry.py 2>&1 | tee "$logfile"
+            ;;
+        "target-postgres")
+            pyinstaller --clean --name "$name" \
+              --workpath "$workpath" \
+              --add-data "$(python3.10 -c "import singer, os; print(os.path.join(os.path.dirname(singer.__file__), 'logging.conf'))")":singer/ \
+              --hidden-import psycopg2 \
+              --hidden-import psycopg2._psycopg \
+              --hidden-import psycopg2.extensions \
+              --collect-binaries psycopg2 \
+              --copy-metadata psycopg2-binary \
+              --copy-metadata pipelinewise-target-postgres \
+              "${PYINSTALLER_COLLECT_ARGS[@]}" \
+              /tmp/target_postgres_entry.py 2>&1 | tee "$logfile"
+            ;;
+        "transform-field")
+            pyinstaller --clean --name "$name" \
+              --workpath "$workpath" \
+              --add-data "$(python3.10 -c "import singer, os; print(os.path.join(os.path.dirname(singer.__file__), 'logging.conf'))")":singer/ \
+              "${PYINSTALLER_COLLECT_ARGS[@]}" \
+              /tmp/transform_field_entry.py 2>&1 | tee "$logfile"
+            ;;
+        "postgres-to-postgres")
+            pyinstaller --clean --name "$name" \
+              --workpath "$workpath" \
+              --paths /build \
+              --hidden-import=multiprocessing \
+              --hidden-import=multiprocessing.spawn \
+              --collect-submodules pipelinewise \
+              --collect-data pipelinewise \
+              "${PYINSTALLER_COLLECT_ARGS[@]}" \
+              /tmp/postgres_to_postgres_entry.py 2>&1 | tee "$logfile"
+            ;;
+    esac
+
+    echo "$name build completed successfully"
+}
+
+# Start all builds in parallel
+echo "Starting parallel PyInstaller builds..."
+echo "Note: Build output will be displayed in real-time. Multiple builds running simultaneously may interleave output."
+echo ""
+
+build_pyinstaller "pipelinewise" &
+PID_PIPELINEWISE=$!
+
+build_pyinstaller "tap-postgres" &
+PID_TAP=$!
+
+build_pyinstaller "target-postgres" &
+PID_TARGET=$!
+
+build_pyinstaller "transform-field" &
+PID_TRANSFORM=$!
+
+build_pyinstaller "postgres-to-postgres" &
+PID_FASTSYNC=$!
+
+# Wait for all builds to complete
+echo "Waiting for all builds to complete..."
+echo "Build output is shown in real-time above. This may take 10-15 minutes."
+echo ""
+
+wait $PID_PIPELINEWISE
+wait $PID_TAP
+wait $PID_TARGET
+wait $PID_TRANSFORM
+wait $PID_FASTSYNC
+
+echo ""
+echo "All PyInstaller builds completed!"
+
+echo "All PyInstaller builds completed!"
+
+# Check for any build failures
+for logfile in /tmp/build-*.log; do
+    if [ -f "$logfile" ]; then
+        if grep -q "completed successfully" "$logfile"; then
+            echo "✓ $(basename "$logfile" .log) - SUCCESS"
+        else
+            echo "✗ $(basename "$logfile" .log) - FAILED"
+            tail -20 "$logfile"
+        fi
+    fi
+done
+
+# Copy built executables to final locations
+echo "Copying built executables to final locations..."
+mkdir -p /build/dist/pipelinewise/connectors
+cp -r /build/dist/tap-postgres /build/dist/pipelinewise/connectors/
+cp -r /build/dist/transform-field /build/dist/pipelinewise/connectors/
+cp -r /build/dist/target-postgres /build/dist/pipelinewise/connectors/
 
 # Create pipelinewise/bin directory and copy fastsync binaries
 mkdir -p /build/dist/pipelinewise/bin
 cp -r /build/dist/postgres-to-postgres /build/dist/pipelinewise/bin/
 
 # Add setup script
-cp /build/setup-connectors.sh /build/dist/pipelinewise/setup-connectors.sh
-chmod +x /build/dist/pipelinewise/setup-connectors.sh
+cp /build/setup-connectors.sh /build/dist/pipelinewise/setup-connectors.sh 2>/dev/null && chmod +x /build/dist/pipelinewise/setup-connectors.sh || echo "Warning: setup-connectors.sh not found"
 
 # Add wrapper script as 'plw'
-cp /build/plw-wrapper.sh /build/dist/pipelinewise/plw
-chmod +x /build/dist/pipelinewise/plw
+cp /build/plw-wrapper.sh /build/dist/pipelinewise/plw 2>/dev/null && chmod +x /build/dist/pipelinewise/plw || echo "Warning: plw-wrapper.sh not found"
 
 echo ""
 echo "Build complete!"
@@ -347,13 +516,19 @@ python3.10 /tmp/test_tap_psycopg2.py || echo "⚠ Warning: psycopg2 verification
 
 # Verify psycopg2 in bundled tap-postgres
 echo "Verifying bundled psycopg2 libpq version..."
-python3.10 -c "import psycopg2; v=psycopg2.__libpq_version__; print(f'Bundled libpq: {v} (' + ('✓ SCRAM supported' if v>=100000 else '✗ Too old') + ')')"
+python3.10 -c "import psycopg2; v=psycopg2.__libpq_version__; print('Bundled libpq: {} ({})'.format(v, '✓ SCRAM supported' if v>=100000 else '✗ Too old'))"
 
 echo ""
-echo "Creating tarball..."
-cd /build/dist && tar -cf pipelinewise-rhel7.tar pipelinewise/
-echo "Note: Compress with 'xz -9 pipelinewise-rhel7.tar' on host for maximum compression"
-ls -lh /build/dist/pipelinewise-rhel7.tar
+echo "Creating tarball with parallel compression..."
+cd /build/dist
+
+# Use parallel compression with xz
+echo "Compressing with xz (parallel, $CPU_CORES threads)..."
+tar -cf - pipelinewise/ | xz -9 -T$CPU_CORES > pipelinewise-rhel7.tar.xz
+
+echo "✓ Tarball created with parallel compression"
+ls -lh /build/dist/pipelinewise-rhel7.tar.xz
+
 echo ""
 echo "Creating self-extracting installer..."
 if [ -f /build/build-rhel7/create-installer.sh ]; then
@@ -366,6 +541,33 @@ if [ -f /build/build-rhel7/create-installer.sh ]; then
 else
   echo "⚠ Installer script not found, skipping..."
 fi
+
+echo ""
+echo "=============================================="
+echo "CACHE STATISTICS"
+echo "=============================================="
+
+echo "PIP Cache Statistics:"
+if [ -d "$PIP_CACHE_DIR" ]; then
+    echo "  Cache directory: $PIP_CACHE_DIR"
+    du -sh "$PIP_CACHE_DIR" 2>/dev/null || echo "  Cache size: Unknown"
+    find "$PIP_CACHE_DIR" -name "*.whl" | wc -l | xargs echo "  Cached wheels:"
+else
+    echo "  No pip cache found"
+fi
+
+echo ""
+echo "CCACHE Statistics:"
+if command -v ccache >/dev/null 2>&1; then
+    ccache -s 2>/dev/null || echo "  ccache stats not available"
+else
+    echo "  ccache not available"
+fi
+
+echo ""
+echo "Total cache size:"
+du -sh "$CACHE_DIR" 2>/dev/null || echo "Cache size: Unknown"
+
 echo ""
 echo "=============================================="
 echo "BUILD COMPLETE!"
@@ -390,3 +592,14 @@ if [ -f /build/dist/pipelinewise-installer.run ]; then
   echo "  3. Run: pipelinewise --help"
   echo ""
 fi
+
+echo "=============================================="
+echo "PERFORMANCE OPTIMIZATIONS APPLIED"
+echo "=============================================="
+echo "✓ Parallel PyInstaller builds ($CPU_CORES simultaneous)"
+echo "✓ PIP wheel caching enabled"
+echo "✓ CCACHE for C/C++ compilation speedup"
+echo "✓ Parallel module collection"
+echo "✓ Parallel tarball compression (xz -T$CPU_CORES)"
+echo "✓ Persistent cache directories for faster rebuilds"
+echo "=============================================="

@@ -11,7 +11,7 @@ set -euo pipefail
 # ========== CONFIGURATION ==========
 RUN_FILE="portable-pipelinewise.run"
 TEMP_DIR=$(mktemp -d)
-PORTABLE_ROOT="$TEMP_DIR/portable-pipelinewise"
+PORTABLE_ROOT="$TEMP_DIR"
 VENV_ROOT="$PORTABLE_ROOT/.virtualenvs"
 BIN_DIR="$PORTABLE_ROOT/bin"
 CONFIG_DIR="$PORTABLE_ROOT/config"
@@ -258,11 +258,8 @@ log "Extracting $RUN_FILE to $TEMP_DIR..."
 echo "$TEMP_DIR" | ./"$RUN_FILE" >/dev/null 2>&1 || { logerr "❌ Failed to extract $RUN_FILE"; exit 1; }
 log "✅ Extraction complete"
 
-# Verify extraction
-if [ ! -d "$PORTABLE_ROOT" ]; then
-  logerr "❌ Extraction failed - $PORTABLE_ROOT not found"
-  exit 1
-fi
+# Verify extraction - files should be directly in TEMP_DIR now
+PORTABLE_ROOT="$TEMP_DIR"
 for v in "${CONNECTORS[@]}"; do
   check_venv_exists "$v"
   check_venv_activatable "$v"

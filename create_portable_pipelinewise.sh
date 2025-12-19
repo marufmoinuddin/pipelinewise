@@ -21,8 +21,7 @@ WRAPPERS=(
   "transform-field"
 )
 PYTHON_MIN=3.8
-PYTHON_MAX=3.12
-PYTHON_EXCLUDE=3.13
+PYTHON_MAX=3.13
 PSYCOPG2_MIN=2.9.5
 LIBPQ_MIN=100000
 
@@ -112,13 +111,19 @@ function install_connector() {
   info "Installing $name ..."
   case "$name" in
     tap-postgres)
-      "$venv_path/bin/pip" install -e "$PORTABLE_ROOT/../singer-connectors/tap-postgres" "psycopg2-binary>=$PSYCOPG2_MIN" || error_exit "Failed to install tap-postgres."
+      # Install psycopg2-binary first with compatible version
+      "$venv_path/bin/pip" install "psycopg2-binary>=2.9.5" || error_exit "Failed to install psycopg2-binary."
+      # Then install tap-postgres without dependencies
+      "$venv_path/bin/pip" install --no-deps "pipelinewise-tap-postgres==1.8.4" || error_exit "Failed to install tap-postgres."
       ;;
     target-postgres)
-      "$venv_path/bin/pip" install -e "$PORTABLE_ROOT/../singer-connectors/target-postgres" "psycopg2-binary>=$PSYCOPG2_MIN" || error_exit "Failed to install target-postgres."
+      # Install psycopg2-binary first with compatible version
+      "$venv_path/bin/pip" install "psycopg2-binary>=2.9.5" || error_exit "Failed to install psycopg2-binary."
+      # Then install target-postgres without dependencies
+      "$venv_path/bin/pip" install --no-deps "pipelinewise-target-postgres==2.1.2" || error_exit "Failed to install target-postgres."
       ;;
     transform-field)
-      "$venv_path/bin/pip" install -e "$PORTABLE_ROOT/../singer-connectors/transform-field" || error_exit "Failed to install transform-field."
+      "$venv_path/bin/pip" install "pipelinewise-transform-field" || error_exit "Failed to install transform-field."
       ;;
     *)
       error_exit "Unknown connector: $name"
@@ -343,16 +348,23 @@ if [ ! -d "$dest" ]; then
   fi
 fi
 
-# Check if destination already has portable-pipelinewise
-if [ -d "$dest/portable-pipelinewise" ]; then
-  echo "Warning: '$dest/portable-pipelinewise' already exists."
+# Check if destination already has PipelineWise files
+if [ -f "$dest/setup_environment.sh" ] || [ -d "$dest/bin" ] || [ -d "$dest/.virtualenvs" ]; then
+  echo "Warning: PipelineWise files already exist in '$dest'."
   echo "Overwrite? (y/N): "
   read -r overwrite
   if [[ ! "$overwrite" =~ ^[Yy]$ ]]; then
     echo "Exiting."
     exit 1
   fi
-  rm -rf "$dest/portable-pipelinewise"
+  # Remove existing PipelineWise files
+  rm -f "$dest/setup_environment.sh"
+  rm -f "$dest/verify_installation.sh"
+  rm -f "$dest/README.md"
+  rm -f "$dest/requirements.txt"
+  rm -rf "$dest/bin"
+  rm -rf "$dest/config"
+  rm -rf "$dest/.virtualenvs"
 fi
 
 echo "Extracting to '$dest'..."
@@ -360,8 +372,8 @@ echo "Extracting to '$dest'..."
 # Find the line number where the archive starts
 ARCHIVE_LINE=$(awk '/^__ARCHIVE_BELOW__/ {print NR + 1; exit 0;}' "$0")
 
-# Extract the tar archive
-tail -n +$ARCHIVE_LINE "$0" | tar -xz -C "$dest"
+# Extract the tar archive, stripping the top-level directory
+tail -n +$ARCHIVE_LINE "$0" | tar -xz --strip-components=1 -C "$dest"
 
 echo
 echo "========================================"
@@ -369,7 +381,7 @@ echo "  Extraction Complete!"
 echo "========================================"
 echo
 echo "To use PipelineWise:"
-echo "  cd '$dest/portable-pipelinewise'"
+echo "  cd '$dest'"
 echo "  source setup_environment.sh"
 echo "  plw --help"
 echo

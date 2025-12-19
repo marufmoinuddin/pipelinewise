@@ -693,13 +693,13 @@ function test_a_initial_full_sync() {
     start_time=$(date +%s)
 
     # Import tap configuration
-    if ! run_plw_command "$BIN_DIR/plw import --dir $CONFIG_DIR" "import tap config"; then
+    if ! run_plw_command "$BIN_DIR/pipelinewise import --dir $CONFIG_DIR" "import tap config"; then
         failure "Test A: Import failed"
         return 1
     fi
 
     # Run initial sync
-    if ! run_plw_command "$BIN_DIR/plw run_tap --tap tap_postgres_test --target target_postgres_test" "initial full sync"; then
+    if ! run_plw_command "$BIN_DIR/pipelinewise run_tap --tap tap_postgres_test --target target_postgres_test" "initial full sync"; then
         failure "Test A: Initial sync failed"
         return 1
     fi
@@ -762,7 +762,7 @@ EOF
     start_time=$(date +%s)
 
     # Run incremental sync
-    if ! run_plw_command "$BIN_DIR/plw run_tap --tap tap_postgres_test --target target_postgres_test" "incremental sync"; then
+    if ! run_plw_command "$BIN_DIR/pipelinewise run_tap --tap tap_postgres_test --target target_postgres_test" "incremental sync"; then
         failure "Test B: Incremental sync failed"
         return 1
     fi
@@ -797,7 +797,7 @@ EOF
 ) "Adding discount_percent column"
 
     # Run sync
-    if ! run_plw_command "$BIN_DIR/plw run_tap --tap tap_postgres_test --target target_postgres_test" "schema change sync"; then
+    if ! run_plw_command "$BIN_DIR/pipelinewise run_tap --tap tap_postgres_test --target target_postgres_test" "schema change sync"; then
         failure "Test C: Schema change sync failed"
         return 1
     fi
@@ -842,13 +842,13 @@ streams:
 EOF
 
     # Import transform config
-    if ! run_plw_command "$BIN_DIR/plw import --dir $CONFIG_DIR" "import transform config"; then
+    if ! run_plw_command "$BIN_DIR/pipelinewise import --dir $CONFIG_DIR" "import transform config"; then
         failure "Test D: Import transform config failed"
         return 1
     fi
 
     # Run with transformation
-    if ! run_plw_command "$BIN_DIR/plw run_tap --tap tap_postgres_test --target target_postgres_test" "sync with transformation"; then
+    if ! run_plw_command "$BIN_DIR/pipelinewise run_tap --tap tap_postgres_test --target target_postgres_test" "sync with transformation"; then
         failure "Test D: Transformation sync failed"
         return 1
     fi
@@ -898,7 +898,7 @@ EOF
     start_time=$(date +%s)
 
     # Run sync
-    if ! run_plw_command "$BIN_DIR/plw run_tap --tap tap_postgres_test --target target_postgres_test" "large volume sync"; then
+    if ! run_plw_command "$BIN_DIR/pipelinewise run_tap --tap tap_postgres_test --target target_postgres_test" "large volume sync"; then
         failure "Test E: Large volume sync failed"
         return 1
     fi

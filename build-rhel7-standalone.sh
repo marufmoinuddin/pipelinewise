@@ -114,10 +114,14 @@ python3.10 -m pip install \
 
 # Install tap/target connectors and transformers
 echo "Installing tap-postgres, target-postgres, and transform-field..."
+echo "Ensuring compatible joblib/cloudpickle for Python 3.10 and reinstalling target-postgres..."
+python3.10 -m pip install --upgrade "joblib>=1.3.0" "cloudpickle>=2.2.0"
+python3.10 -m pip install --force-reinstall pipelinewise-target-postgres
+
+# Install the connectors and transformers (reinstall tap and transform-field as before)
 python3.10 -m pip install --force-reinstall \
-  'pipelinewise-tap-postgres' \
-  'pipelinewise-target-postgres' \
-  'pipelinewise-transform-field'
+    'pipelinewise-tap-postgres' \
+    'pipelinewise-transform-field'
 
 # Upgrade psycopg2-binary to support SCRAM authentication
 echo "Upgrading psycopg2-binary for SCRAM authentication support..."

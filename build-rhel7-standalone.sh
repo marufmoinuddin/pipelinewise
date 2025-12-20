@@ -430,10 +430,20 @@ done
 
 # Copy built executables to final locations
 echo "Copying built executables to final locations..."
-mkdir -p /build/dist/pipelinewise/connectors
-cp -r /build/dist/tap-postgres /build/dist/pipelinewise/connectors/
-cp -r /build/dist/transform-field /build/dist/pipelinewise/connectors/
-cp -r /build/dist/target-postgres /build/dist/pipelinewise/connectors/
+echo "Organizing connectors into expected .virtualenvs structure..."
+
+# Create .virtualenvs structure for PipelineWise compatibility
+mkdir -p /build/dist/pipelinewise/.virtualenvs/{tap-postgres,target-postgres,transform-field}/bin
+
+# Move executables to proper locations with symlinks
+mv /build/dist/tap-postgres /build/dist/pipelinewise/.virtualenvs/tap-postgres/tap-postgres-dist
+ln -s ../tap-postgres-dist/tap-postgres /build/dist/pipelinewise/.virtualenvs/tap-postgres/bin/tap-postgres
+
+mv /build/dist/target-postgres /build/dist/pipelinewise/.virtualenvs/target-postgres/target-postgres-dist
+ln -s ../target-postgres-dist/target-postgres /build/dist/pipelinewise/.virtualenvs/target-postgres/bin/target-postgres
+
+mv /build/dist/transform-field /build/dist/pipelinewise/.virtualenvs/transform-field/transform-field-dist
+ln -s ../transform-field-dist/transform-field /build/dist/pipelinewise/.virtualenvs/transform-field/bin/transform-field
 
 # Create pipelinewise/bin directory and copy fastsync binaries
 mkdir -p /build/dist/pipelinewise/bin
@@ -461,7 +471,7 @@ echo "Checking GLIBC requirements..."
 objdump -T /build/dist/pipelinewise/pipelinewise | grep GLIBC | sed 's/.*GLIBC_/GLIBC_/' | sort -Vu | tail -5
 echo ""
 echo "Checking bundled psycopg2 libpq version..."
-/build/dist/pipelinewise/connectors/tap-postgres/tap-postgres --version 2>&1 | head -5 || echo "tap-postgres version check skipped"
+/build/dist/pipelinewise/.virtualenvs/tap-postgres/bin/tap-postgres --version 2>&1 | head -5 || echo "tap-postgres version check skipped"
 
 # Test if psycopg2 in the bundled executable supports SCRAM
 python3.10 << 'PYCHECK'
@@ -531,13 +541,14 @@ ls -lh /build/dist/pipelinewise-rhel7.tar.xz
 
 echo ""
 echo "Creating self-extracting installer..."
-if [ -f /build/build-rhel7/create-installer.sh ]; then
-  cd /build
-  DIST_DIR="/build/dist" bash /build/build-rhel7/create-installer.sh
-  if [ -f /build/dist/pipelinewise-installer.run ]; then
+
+# Run the installer creation script
+if /build/create-self-extracting-installer.sh; then
     ls -lh /build/dist/pipelinewise-installer.run
     echo "✓ Installer created successfully"
-  fi
+else
+    echo "⚠ Installer creation failed, but tarball is available"
+fi
 else
   echo "⚠ Installer script not found, skipping..."
 fi

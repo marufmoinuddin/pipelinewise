@@ -23,9 +23,6 @@ setup(name="pipelinewise-target-postgres",
           'inflection==0.3.1',
       ],
       extras_require={
-          "parallel": [
-              'joblib>=1.4.0',
-          ],
           "test": [
               'pytest==6.2.5',
               'pylint==2.6.0',

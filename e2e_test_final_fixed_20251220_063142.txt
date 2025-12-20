@@ -1,0 +1,43 @@
+2025-12-20 06:31:42 [INFO] Starting PipelineWise PostgreSQL E2E Tests (RHEL7 Standalone)
+2025-12-20 06:31:42 [INFO] Test directory: /mnt/Storage/maruf/git/pipelinewise/test_results
+2025-12-20 06:31:42 [INFO] Checking prerequisites...
+2025-12-20 06:31:42 ✅ Docker is available
+2025-12-20 06:31:42 ✅ docker-compose is available
+2025-12-20 06:31:42 ✅ PipelineWise RHEL7 tarball found
+2025-12-20 06:31:42 ✅ Required ports (5433, 5434) are available
+2025-12-20 06:31:42 ✅ Sufficient disk space available
+2025-12-20 06:31:42 [INFO] Starting Docker containers...
+2025-12-20 06:31:43 [INFO] Waiting for database on pipelinewise_test_source:5433...
+2025-12-20 06:31:45 ✅ Database ready on pipelinewise_test_source:5433
+2025-12-20 06:31:45 [INFO] Waiting for database on pipelinewise_test_target:5434...
+2025-12-20 06:31:45 ✅ Database ready on pipelinewise_test_target:5434
+2025-12-20 06:31:45 ✅ PipelineWise container ready
+2025-12-20 06:31:45 ✅ All containers are ready
+2025-12-20 06:31:45 [INFO] Deploying PipelineWise to CentOS 7 container...
+2025-12-20 06:31:54 ✅ PipelineWise deployed successfully
+2025-12-20 06:31:54 [INFO] Setting up source database...
+2025-12-20 06:31:54 ✅ Source database setup complete
+2025-12-20 06:31:54 [INFO] Setting up target database...
+2025-12-20 06:31:55 ✅ Target database setup complete
+2025-12-20 06:31:55 [INFO] Generating test data...
+2025-12-20 06:31:55 ✅ Test data generation complete
+2025-12-20 06:31:55 [INFO] Loading data into source database...
+2025-12-20 06:31:56 ✅ Source data loaded
+2025-12-20 06:31:56 [INFO] Generating PipelineWise configurations...
+2025-12-20 06:31:56 ✅ PipelineWise configurations generated
+2025-12-20 06:31:56 [INFO] === TEST F: SCRAM Authentication Verification ===
+Password for user postgres: 
+psql: error: connection to server on socket "/var/run/postgresql/.s.PGSQL.5432" failed: fe_sendauth: no password supplied
+2025-12-20 06:31:56 ✅ Test F: SCRAM Auth - PASSED (PostgreSQL )
+2025-12-20 06:31:56 [INFO] === TEST A: Initial Full Sync ===
+2025-12-20 06:31:56 [INFO] Running: import tap config
+2025-12-20 06:31:57 [ERROR] PipelineWise command failed: import tap config
+2025-12-20 06:31:57 [ERROR] Check log: /mnt/Storage/maruf/git/pipelinewise/test_results/logs/import_tap_config.log
+2025-12-20 06:31:57 ❌ Test A: Import failed
+2025-12-20 06:31:57 [ERROR] Test failed and --continue-on-error not specified
+2025-12-20 06:31:57 [INFO] Reports generated:
+2025-12-20 06:31:57 [INFO]   Summary: /mnt/Storage/maruf/git/pipelinewise/test_results/test_summary.txt
+2025-12-20 06:31:57 [INFO]   JSON: /mnt/Storage/maruf/git/pipelinewise/test_results/test_report.json
+2025-12-20 06:31:57 [INFO] Stopping and removing containers...
+2025-12-20 06:32:08 ✅ Containers stopped and cleaned up
+2025-12-20 06:32:08 ❌ Some tests failed. Check logs in: /mnt/Storage/maruf/git/pipelinewise/test_results/logs

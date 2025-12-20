@@ -1660,34 +1660,11 @@ class PipelineWise:
                         selected_taps.append(tap)
                         found_selected_taps.add(tap['id'])
 
-            # Check if joblib is available for parallel processing
-            try:
-                import joblib
-                from joblib import Parallel, delayed, parallel_backend
-                has_joblib = True
-            except ImportError:
-                has_joblib = False
-
-            if has_joblib:
-                with parallel_backend('threading', n_jobs=-1):
-                    # Discover taps in parallel and return the list of exception of the failed ones
-                    discover_excs.extend(
-                        list(
-                            filter(
-                                None,
-                                Parallel(verbose=100)(
-                                    delayed(self.discover_tap)(tap=tap, target=target)
-                                    for tap in selected_taps
-                                ),
-                            )
-                        )
-                    )
-            else:
-                # Fallback to sequential processing when joblib is not available
-                for tap in selected_taps:
-                    exc = self.discover_tap(tap=tap, target=target)
-                    if exc:
-                        discover_excs.append(exc)
+            # Sequential processing (joblib removed for compatibility)
+            for tap in selected_taps:
+                exc = self.discover_tap(tap=tap, target=target)
+                if exc:
+                    discover_excs.append(exc)
 
         if selected_taps_id != ['*']:
             total_taps = len(selected_taps_id)

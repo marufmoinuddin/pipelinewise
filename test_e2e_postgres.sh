@@ -509,6 +509,47 @@ function deploy_pipelinewise() {
     return 0
 }
 
+# Verify where installer placed PIPELINEWISE_HOME and ensure host HOME wasn't modified
+function verify_pipelinewise_home_locations() {
+    log "Verifying PIPELINEWISE_HOME locations..."
+
+    # Inspect install dir inside the pipelinewise container (installer uses /tmp/pipelinewise by default)
+    log "Container: checking /tmp/pipelinewise/.pipelinewise contents"
+    if docker exec "$PIPELINEWISE_CONTAINER" bash -c "[ -d /tmp/pipelinewise/.pipelinewise ]" >/dev/null 2>&1; then
+        docker exec "$PIPELINEWISE_CONTAINER" bash -c "ls -la /tmp/pipelinewise/.pipelinewise || true" > "$LOG_DIR/pipelinewise_home_container.log" 2>&1 || true
+        sed -n '1,200p' "$LOG_DIR/pipelinewise_home_container.log" || true
+    else
+        logerr "Container: /tmp/pipelinewise/.pipelinewise NOT FOUND"
+        echo "Container: /tmp/pipelinewise/.pipelinewise NOT FOUND" > "$LOG_DIR/pipelinewise_home_container.log"
+    fi
+
+    # Check for expected files inside container install-dir
+    docker exec "$PIPELINEWISE_CONTAINER" bash -c "[ -f /tmp/pipelinewise/.pipelinewise/config.json ] && echo 'config.json exists' || echo 'config.json missing'" > "$LOG_DIR/pipelinewise_home_container_config_check.log" 2>&1 || true
+    sed -n '1,200p' "$LOG_DIR/pipelinewise_home_container_config_check.log" || true
+
+    # Also check the container user's home (root) to ensure installer didn't write to it
+    log "Container: checking root home for /root/.pipelinewise (safety check)"
+    docker exec "$PIPELINEWISE_CONTAINER" bash -lc "if [ -d /root/.pipelinewise ]; then ls -la /root/.pipelinewise; else echo 'Container root: /root/.pipelinewise NOT FOUND'; fi" > "$LOG_DIR/pipelinewise_home_container_root.log" 2>&1 || true
+    sed -n '1,200p' "$LOG_DIR/pipelinewise_home_container_root.log" || true
+    if docker exec "$PIPELINEWISE_CONTAINER" bash -lc "[ -d /root/.pipelinewise ]" >/dev/null 2>&1; then
+        logerr "Warning: Container root /root/.pipelinewise exists — installer may have written into container's root home"
+    else
+        success "Container root: /root/.pipelinewise not present (expected)"
+    fi
+
+    # Inspect host home dir for accidental .pipelinewise changes
+    log "Host: checking $HOME/.pipelinewise contents"
+    if [ -d "$HOME/.pipelinewise" ]; then
+        ls -la "$HOME/.pipelinewise" > "$LOG_DIR/pipelinewise_home_host.log" 2>&1 || true
+        sed -n '1,200p' "$LOG_DIR/pipelinewise_home_host.log" || true
+        logerr "Warning: Host $HOME/.pipelinewise exists — verify this is expected"
+    else
+        echo "Host: $HOME/.pipelinewise NOT FOUND" > "$LOG_DIR/pipelinewise_home_host.log"
+        sed -n '1,200p' "$LOG_DIR/pipelinewise_home_host.log" || true
+        success "Host: $HOME/.pipelinewise not present (expected)"
+    fi
+}
+
 # ========== DATABASE SETUP ==========
 function create_source_database() {
     log "Setting up source database..."
@@ -1361,6 +1402,9 @@ function main() {
 
     # Generate reports
     generate_report
+
+    # Verify PIPELINEWISE_HOME locations
+    verify_pipelinewise_home_locations
 
     # Cleanup
     stop_containers

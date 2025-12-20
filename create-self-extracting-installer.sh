@@ -187,20 +187,29 @@ setup_environment() {
     if [ ! -f "env.sh" ]; then
         # Create env.sh if it doesn't exist
         cat > "$INSTALL_DIR/env.sh" << 'EOF_ENV'
-#!/bin/bash
-# PipelineWise Environment Setup
-# Source this file: source env.sh
+    #!/bin/bash
+    # PipelineWise Environment Setup
+    # Source this file: source env.sh
 
-export PIPELINEWISE_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-export PATH="$PIPELINEWISE_HOME:$PATH"
+    # SCRIPT_DIR is the installation directory (where this script lives)
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    # Ensure PIPELINEWISE_HOME points to the install-dir .pipelinewise
+    export PIPELINEWISE_HOME="${SCRIPT_DIR}/.pipelinewise"
+    # Ensure PIPELINEWISE_CONFIG_DIRECTORY defaults to <install>/.pipelinewise/config
+    export PIPELINEWISE_CONFIG_DIRECTORY="${PIPELINEWISE_HOME}/config"
+    export PATH="$SCRIPT_DIR:$PATH"
 
-echo "PipelineWise environment configured"
-echo "  PIPELINEWISE_HOME: $PIPELINEWISE_HOME"
-echo ""
-echo "Usage:"
-echo "  pipelinewise --help"
-echo "  pipelinewise --version"
-echo "  plw --help          # Wrapper script with Docker-like interface"
+    # Ensure config directory exists
+    mkdir -p "${PIPELINEWISE_CONFIG_DIRECTORY}"
+
+    echo "PipelineWise environment configured"
+    echo "  PIPELINEWISE_HOME: $PIPELINEWISE_HOME"
+    echo "  PIPELINEWISE_CONFIG_DIRECTORY: $PIPELINEWISE_CONFIG_DIRECTORY"
+    echo ""
+    echo "Usage:"
+    echo "  pipelinewise --help"
+    echo "  pipelinewise --version"
+    echo "  plw --help          # Wrapper script with Docker-like interface"
 EOF_ENV
         chmod +x "$INSTALL_DIR/env.sh"
     fi
@@ -213,7 +222,11 @@ EOF_ENV
         print_info "Setting up connectors..."
         # Run the bundled setup script
         if [ -f "${INSTALL_DIR}/setup-connectors.sh" ]; then
-            export PIPELINEWISE_HOME="${HOME}/.pipelinewise"
+            # Use install-dir based PIPELINEWISE_HOME so configs are created under the install dir
+            export PIPELINEWISE_HOME="${INSTALL_DIR}/.pipelinewise"
+            # Ensure PIPELINEWISE_CONFIG_DIRECTORY is set for setup and defaults to <install>/.pipelinewise/config
+            export PIPELINEWISE_CONFIG_DIRECTORY="${PIPELINEWISE_HOME}/config"
+            mkdir -p "${PIPELINEWISE_CONFIG_DIRECTORY}"
             "${INSTALL_DIR}/setup-connectors.sh"
         else
             print_error "setup-connectors.sh not found in bundle"

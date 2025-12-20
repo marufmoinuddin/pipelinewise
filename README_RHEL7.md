@@ -87,8 +87,8 @@ pipelinewise/
 ├── env.sh                         # Environment configuration script
 └── logging.conf                   # Logging configuration
 
-Runtime structure (created by setup-connectors.sh):
-~/.pipelinewise/.virtualenvs/
+Runtime structure (created by `setup-connectors.sh`; by default created under the install directory):
+<install_dir>/.pipelinewise/.virtualenvs/
 ├── tap-postgres/bin/
 │   └── tap-postgres → /install/path/connectors/tap-postgres/tap-postgres
 ├── target-postgres/bin/
@@ -110,7 +110,7 @@ PipelineWise discovers connectors via `$PIPELINEWISE_HOME/.virtualenvs/<connecto
 This design enables:
 - ✅ Portable distribution (all files in one directory)
 - ✅ PipelineWise runtime compatibility (finds connectors in expected locations)
-- ✅ Multi-user support (each user gets own `.virtualenvs` in their `$HOME`)
+- ⚠ Note: The installer defaults to using the install directory for `PIPELINEWISE_HOME` (so configs and virtualenvs are local to that installation). You can override this by exporting `PIPELINEWISE_HOME` in the environment if you prefer per-user locations.
 
 ---
 

@@ -28,7 +28,9 @@ build/
 *.log
 *log*
 test*.json
-
+test*.xml
+test*.txt
+e2e*.txt
 
 # Portable pipelinewise
 portable-pipelinewise*/

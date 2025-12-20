@@ -490,7 +490,11 @@ cat > /build/dist/pipelinewise/setup-connectors.sh << 'EOF'
 set -e
 
 INSTALL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PIPELINEWISE_HOME="${PIPELINEWISE_HOME:-${HOME}/.pipelinewise}"
+# Use install-dir based PIPELINEWISE_HOME (never default to HOME)
+PIPELINEWISE_HOME="${INSTALL_DIR}/.pipelinewise"
+# Config directory defaults to ${PIPELINEWISE_HOME}/config
+PIPELINEWISE_CONFIG_DIRECTORY="${PIPELINEWISE_HOME}/config"
+export PIPELINEWISE_CONFIG_DIRECTORY
 VENV_DIR="${PIPELINEWISE_HOME}/.virtualenvs"
 
 echo "Setting up PipelineWise connectors..."
@@ -520,8 +524,15 @@ chmod +x "${VENV_DIR}/pipelinewise/bin/postgres-to-postgres" 2>/dev/null || true
 echo "✓ Connectors setup complete"
 echo ""
 echo "PipelineWise is ready to use!"
-echo "  Config directory: $PIPELINEWISE_HOME"
+echo "  Config directory: $PIPELINEWISE_CONFIG_DIRECTORY"
 echo "  Virtual envs: $VENV_DIR"
+ 
+# Ensure config directory exists and create placeholder config.json to avoid defaulting to $HOME
+mkdir -p "${PIPELINEWISE_CONFIG_DIRECTORY}"
+if [ ! -f "${PIPELINEWISE_CONFIG_DIRECTORY}/config.json" ]; then
+    echo '{}' > "${PIPELINEWISE_CONFIG_DIRECTORY}/config.json"
+    chmod 644 "${PIPELINEWISE_CONFIG_DIRECTORY}/config.json" || true
+fi
 EOF
 
 chmod +x /build/dist/pipelinewise/setup-connectors.sh
@@ -535,10 +546,10 @@ cat > /build/dist/pipelinewise/plw << 'EOF'
 
 # Get the installation directory (where this script is located)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PIPELINEWISE_HOME="${PIPELINEWISE_HOME:-${HOME}/.pipelinewise}"
-
-# Export PIPELINEWISE_HOME so PipelineWise knows where to find .virtualenvs
-export PIPELINEWISE_HOME
+# PIPELINEWISE_HOME must point to the install dir's .pipelinewise
+export PIPELINEWISE_HOME="${SCRIPT_DIR}/.pipelinewise"
+# Ensure config directory env is set and defaults to <install>/.pipelinewise/config
+export PIPELINEWISE_CONFIG_DIRECTORY="${PIPELINEWISE_HOME}/config"
 
 # Ensure connectors are set up
 if [ ! -d "${PIPELINEWISE_HOME}/.virtualenvs" ]; then
@@ -572,8 +583,12 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Run PipelineWise executable with arguments
-exec "${SCRIPT_DIR}/pipelinewise" "${ARGS[@]}"
+# Debug: print resolved PIPELINEWISE_ vars
+echo "DEBUG: PIPELINEWISE_HOME=$PIPELINEWISE_HOME"
+echo "DEBUG: PIPELINEWISE_CONFIG_DIRECTORY=$PIPELINEWISE_CONFIG_DIRECTORY"
+
+# Run PipelineWise executable with environment explicitly set to avoid defaulting to HOME
+exec env PIPELINEWISE_HOME="$PIPELINEWISE_HOME" PIPELINEWISE_CONFIG_DIRECTORY="$PIPELINEWISE_CONFIG_DIRECTORY" "${SCRIPT_DIR}/pipelinewise" "${ARGS[@]}"
 EOF
 
 chmod +x /build/dist/pipelinewise/plw
@@ -584,15 +599,26 @@ cat > /build/dist/pipelinewise/env.sh << 'EOF'
 # PipelineWise Environment Setup
 # Source this file: source env.sh
 
-export PIPELINEWISE_HOME="${PIPELINEWISE_HOME:-${HOME}/.pipelinewise}"
+# SCRIPT_DIR is the installation directory (where env.sh lives)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Ensure PIPELINEWISE_HOME points to the install-dir .pipelinewise
+export PIPELINEWISE_HOME="${SCRIPT_DIR}/.pipelinewise"
+# Ensure config directory env defaults to <install>/.pipelinewise/config
+export PIPELINEWISE_CONFIG_DIRECTORY="${PIPELINEWISE_HOME}/config"
 export PATH="$SCRIPT_DIR:$PATH"
 
 # Ensure connectors are set up
 if [ ! -d "${PIPELINEWISE_HOME}/.virtualenvs" ]; then
     echo "Setting up connectors for first-time use..."
+    # Ensure env vars are exported for setup script
+    export PIPELINEWISE_CONFIG_DIRECTORY
     "${SCRIPT_DIR}/setup-connectors.sh"
 fi
+
+# Ensure config directory exists
+mkdir -p "${PIPELINEWISE_CONFIG_DIRECTORY}"
+
+echo "PipelineWise environment configured"
 
 echo "PipelineWise environment configured"
 echo "  PIPELINEWISE_HOME: $PIPELINEWISE_HOME"

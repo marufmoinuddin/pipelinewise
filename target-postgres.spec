@@ -6,7 +6,8 @@ from PyInstaller.utils.hooks import copy_metadata
 
 datas = [('/usr/local/lib/python3.10/site-packages/singer/logging.conf', 'singer/')]
 binaries = []
-hiddenimports = ['psycopg2', 'psycopg2._psycopg', 'psycopg2.extensions']
+hiddenimports = ['target_postgres', 'target_postgres.db_sync', 'psycopg2', 'psycopg2._psycopg', 'psycopg2.extensions']
+datas += collect_data_files('target_postgres')
 datas += collect_data_files('PyInstaller')
 datas += collect_data_files('aiohappyeyeballs')
 datas += collect_data_files('aiohttp')
@@ -72,6 +73,7 @@ datas += collect_data_files('yarl')
 datas += copy_metadata('psycopg2-binary')
 datas += copy_metadata('pipelinewise-target-postgres')
 binaries += collect_dynamic_libs('psycopg2')
+hiddenimports += collect_submodules('target_postgres')
 hiddenimports += collect_submodules('PyInstaller')
 hiddenimports += collect_submodules('aiohappyeyeballs')
 hiddenimports += collect_submodules('aiohttp')

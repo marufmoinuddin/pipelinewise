@@ -3,7 +3,8 @@ from PyInstaller.utils.hooks import collect_data_files
 from PyInstaller.utils.hooks import collect_submodules
 
 datas = [('/usr/local/lib/python3.10/site-packages/singer/logging.conf', 'singer/')]
-hiddenimports = []
+hiddenimports = ['transform_field']
+datas += collect_data_files('transform_field')
 datas += collect_data_files('PyInstaller')
 datas += collect_data_files('aiohappyeyeballs')
 datas += collect_data_files('aiohttp')
@@ -66,6 +67,7 @@ datas += collect_data_files('urllib3')
 datas += collect_data_files('wheel')
 datas += collect_data_files('yaml')
 datas += collect_data_files('yarl')
+hiddenimports += collect_submodules('transform_field')
 hiddenimports += collect_submodules('PyInstaller')
 hiddenimports += collect_submodules('aiohappyeyeballs')
 hiddenimports += collect_submodules('aiohttp')

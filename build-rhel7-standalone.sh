@@ -45,14 +45,6 @@ fi
 
 # Configure ccache if available
 if command -v ccache >/dev/null 2>&1; then
-    export CC="ccache gcc"
-    export CXX="ccache g++"
-    echo "ccache configured for faster compilation"
-else
-    echo "ccache not available, using direct compilation"
-fi
-
-if command -v ccache >/dev/null 2>&1; then
     export CCACHE_MAXSIZE="5G"
     export CC="ccache gcc"
     export CXX="ccache g++"
@@ -162,8 +154,8 @@ def collect_modules_from_path(path_tuple):
 # Get site packages paths
 site_packages = []
 for path in sys.path:
-  if 'site-packages' in path:
-    site_packages.append(os.path.realpath(path))
+    if 'site-packages' in path:
+        site_packages.append(os.path.realpath(path))
 
 site_packages = tuple(sorted(set(site_packages)))
 
@@ -180,27 +172,27 @@ with ThreadPoolExecutor(max_workers=4) as executor:
 # Filter and sort modules
 modules = sorted(mod for mod in all_modules if mod and not mod.startswith('_'))
 for mod in modules:
-  print(mod)
+    print(mod)
 PY
 )
 
 PYINSTALLER_COLLECT_ARGS=()
 SKIP_SUBMODULE_COLLECTION=("ansible" "ansible_collections")
 for module in "${PYINSTALLER_SITE_MODULES[@]}"; do
-  skip_submodules=0
-  for skip in "${SKIP_SUBMODULE_COLLECTION[@]}"; do
-    if [[ "$module" == "$skip" ]]; then
-      skip_submodules=1
-      break
-    fi
-  done
+    skip_submodules=0
+    for skip in "${SKIP_SUBMODULE_COLLECTION[@]}"; do
+        if [[ "$module" == "$skip" ]]; then
+            skip_submodules=1
+            break
+        fi
+    done
 
-  if [[ $skip_submodules -eq 1 ]]; then
-    PYINSTALLER_COLLECT_ARGS+=(--collect-data "$module")
-  else
-    PYINSTALLER_COLLECT_ARGS+=(--collect-submodules "$module")
-    PYINSTALLER_COLLECT_ARGS+=(--collect-data "$module")
-  fi
+    if [[ $skip_submodules -eq 1 ]]; then
+        PYINSTALLER_COLLECT_ARGS+=(--collect-data "$module")
+    else
+        PYINSTALLER_COLLECT_ARGS+=(--collect-submodules "$module")
+        PYINSTALLER_COLLECT_ARGS+=(--collect-data "$module")
+    fi
 done
 
 echo "  Collected ${#PYINSTALLER_SITE_MODULES[@]} site-packages modules for bundling."
@@ -243,10 +235,10 @@ import logging.config
 
 # Configure logging programmatically to avoid fileConfig issues
 logging.basicConfig(
-  level=logging.INFO,
-  format='time=%(asctime)s name=%(name)s level=%(levelname)s message=%(message)s',
-  datefmt='%Y-%m-%d %H:%M:%S',
-  stream=sys.stderr
+    level=logging.INFO,
+    format='time=%(asctime)s name=%(name)s level=%(levelname)s message=%(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S',
+    stream=sys.stderr
 )
 
 # Prevent singer from trying to load logging.conf
@@ -255,7 +247,7 @@ singer.logger._configured = True
 
 from transform_field import main
 if __name__ == '__main__':
-  sys.exit(main())
+    sys.exit(main())
 EOF
 
 # Create Python entry point for target-postgres with logging setup
@@ -335,6 +327,11 @@ build_pyinstaller() {
             pyinstaller --clean --name "$name" \
               --workpath "$workpath" \
               --add-data "$(python3.10 -c "import singer, os; print(os.path.join(os.path.dirname(singer.__file__), 'logging.conf'))")":singer/ \
+              --hidden-import tap_postgres \
+              --hidden-import tap_postgres.sync_strategies \
+              --hidden-import tap_postgres.db \
+              --collect-submodules tap_postgres \
+              --collect-data tap_postgres \
               --hidden-import psycopg2 \
               --hidden-import psycopg2._psycopg \
               --hidden-import psycopg2.extensions \
@@ -348,6 +345,10 @@ build_pyinstaller() {
             pyinstaller --clean --name "$name" \
               --workpath "$workpath" \
               --add-data "$(python3.10 -c "import singer, os; print(os.path.join(os.path.dirname(singer.__file__), 'logging.conf'))")":singer/ \
+              --hidden-import target_postgres \
+              --hidden-import target_postgres.db_sync \
+              --collect-submodules target_postgres \
+              --collect-data target_postgres \
               --hidden-import psycopg2 \
               --hidden-import psycopg2._psycopg \
               --hidden-import psycopg2.extensions \
@@ -361,6 +362,9 @@ build_pyinstaller() {
             pyinstaller --clean --name "$name" \
               --workpath "$workpath" \
               --add-data "$(python3.10 -c "import singer, os; print(os.path.join(os.path.dirname(singer.__file__), 'logging.conf'))")":singer/ \
+              --hidden-import transform_field \
+              --collect-submodules transform_field \
+              --collect-data transform_field \
               "${PYINSTALLER_COLLECT_ARGS[@]}" \
               /tmp/transform_field_entry.py 2>&1 | tee "$logfile"
             ;;
@@ -414,8 +418,6 @@ wait $PID_FASTSYNC
 echo ""
 echo "All PyInstaller builds completed!"
 
-echo "All PyInstaller builds completed!"
-
 # Check for any build failures
 for logfile in /tmp/build-*.log; do
     if [ -f "$logfile" ]; then
@@ -430,38 +432,189 @@ done
 
 # Copy built executables to final locations
 echo "Copying built executables to final locations..."
-echo "Organizing connectors into expected .virtualenvs structure..."
+echo "Organizing connectors into expected structure..."
 
-# Create .virtualenvs structure for PipelineWise compatibility
-mkdir -p /build/dist/pipelinewise/.virtualenvs/{tap-postgres,target-postgres,transform-field}/bin
+# Clean up any existing structure
+rm -rf /build/dist/pipelinewise/.virtualenvs
+rm -rf /build/dist/pipelinewise/connectors
 
-# Move executables to proper locations with symlinks
-mv /build/dist/tap-postgres /build/dist/pipelinewise/.virtualenvs/tap-postgres/tap-postgres-dist
-ln -s ../tap-postgres-dist/tap-postgres /build/dist/pipelinewise/.virtualenvs/tap-postgres/bin/tap-postgres
+# Create NEW directory structure matching the installer expectations
+mkdir -p /build/dist/pipelinewise/connectors/{tap-postgres,target-postgres,transform-field}
+mkdir -p /build/dist/pipelinewise/bin/{postgres-to-postgres,mysql-to-postgres,mongodb-to-postgres}
 
-mv /build/dist/target-postgres /build/dist/pipelinewise/.virtualenvs/target-postgres/target-postgres-dist
-ln -s ../target-postgres-dist/target-postgres /build/dist/pipelinewise/.virtualenvs/target-postgres/bin/target-postgres
+# Move tap/target connectors to connectors/ directory
+mv /build/dist/tap-postgres /build/dist/pipelinewise/connectors/tap-postgres/
+mv /build/dist/target-postgres /build/dist/pipelinewise/connectors/target-postgres/
+mv /build/dist/transform-field /build/dist/pipelinewise/connectors/transform-field/
 
-mv /build/dist/transform-field /build/dist/pipelinewise/.virtualenvs/transform-field/transform-field-dist
-ln -s ../transform-field-dist/transform-field /build/dist/pipelinewise/.virtualenvs/transform-field/bin/transform-field
+# Move fastsync binaries to bin/ directory (replace any existing directory)
+rm -rf /build/dist/pipelinewise/bin/postgres-to-postgres || true
+mv /build/dist/postgres-to-postgres /build/dist/pipelinewise/bin/postgres-to-postgres/
 
-# Create pipelinewise/bin directory and copy fastsync binaries
-mkdir -p /build/dist/pipelinewise/bin
-cp -r /build/dist/postgres-to-postgres /build/dist/pipelinewise/bin/
+# Copy libcrypt library for compatibility (if building in CentOS 7)
+echo "Bundling libcrypt for compatibility..."
 
-# Add setup script
-cp /build/setup-connectors.sh /build/dist/pipelinewise/setup-connectors.sh 2>/dev/null && chmod +x /build/dist/pipelinewise/setup-connectors.sh || echo "Warning: setup-connectors.sh not found"
+# Ensure _internal directories exist where we will copy the library
+mkdir -p /build/dist/pipelinewise/_internal
+mkdir -p /build/dist/pipelinewise/connectors/tap-postgres/_internal
+mkdir -p /build/dist/pipelinewise/connectors/target-postgres/_internal
+mkdir -p /build/dist/pipelinewise/connectors/transform-field/_internal
+mkdir -p /build/dist/pipelinewise/bin/postgres-to-postgres/_internal
 
-# Add wrapper script as 'plw'
-cp /build/plw-wrapper.sh /build/dist/pipelinewise/plw 2>/dev/null && chmod +x /build/dist/pipelinewise/plw || echo "Warning: plw-wrapper.sh not found"
+if [ -f /usr/lib64/libcrypt.so.1 ]; then
+    # In CentOS 7 - copy the correct version
+    cp /usr/lib64/libcrypt.so.1 /build/dist/pipelinewise/_internal/
+    cp /usr/lib64/libcrypt.so.1 /build/dist/pipelinewise/connectors/tap-postgres/_internal/
+    cp /usr/lib64/libcrypt.so.1 /build/dist/pipelinewise/connectors/target-postgres/_internal/
+    cp /usr/lib64/libcrypt.so.1 /build/dist/pipelinewise/connectors/transform-field/_internal/
+    cp /usr/lib64/libcrypt.so.1 /build/dist/pipelinewise/bin/postgres-to-postgres/_internal/
+    echo "✓ Bundled libcrypt.so.1 from CentOS 7"
+elif [ -f /usr/lib/libcrypt.so.2 ]; then
+    # On modern system - create symlink for compatibility
+    cp /usr/lib/libcrypt.so.2 /build/dist/pipelinewise/_internal/libcrypt.so.1
+    cp /usr/lib/libcrypt.so.2 /build/dist/pipelinewise/connectors/tap-postgres/_internal/libcrypt.so.1
+    cp /usr/lib/libcrypt.so.2 /build/dist/pipelinewise/connectors/target-postgres/_internal/libcrypt.so.1
+    cp /usr/lib/libcrypt.so.2 /build/dist/pipelinewise/connectors/transform-field/_internal/libcrypt.so.1
+    cp /usr/lib/libcrypt.so.2 /build/dist/pipelinewise/bin/postgres-to-postgres/_internal/libcrypt.so.1
+    echo "✓ Bundled libcrypt.so.2 as libcrypt.so.1 (compatibility mode)"
+else
+    echo "⚠ Warning: libcrypt not found, may cause issues on some systems"
+fi
+
+# Create setup-connectors.sh script (will be run by installer)
+cat > /build/dist/pipelinewise/setup-connectors.sh << 'EOF'
+#!/bin/bash
+# Setup PipelineWise connectors and fastsync binaries
+# This creates the .virtualenvs structure expected by PipelineWise
+
+set -e
+
+INSTALL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PIPELINEWISE_HOME="${PIPELINEWISE_HOME:-${HOME}/.pipelinewise}"
+VENV_DIR="${PIPELINEWISE_HOME}/.virtualenvs"
+
+echo "Setting up PipelineWise connectors..."
+echo "  Installation directory: $INSTALL_DIR"
+echo "  PipelineWise home: $PIPELINEWISE_HOME"
+
+# Create virtualenvs directory structure
+mkdir -p "${VENV_DIR}/tap-postgres/bin"
+mkdir -p "${VENV_DIR}/target-postgres/bin"
+mkdir -p "${VENV_DIR}/transform-field/bin"
+mkdir -p "${VENV_DIR}/pipelinewise/bin"
+
+# Create symlinks to bundled connectors (point to actual executable inside bundle)
+ln -sf "${INSTALL_DIR}/connectors/tap-postgres/tap-postgres/tap-postgres" "${VENV_DIR}/tap-postgres/bin/tap-postgres"
+ln -sf "${INSTALL_DIR}/connectors/target-postgres/target-postgres/target-postgres" "${VENV_DIR}/target-postgres/bin/target-postgres"
+ln -sf "${INSTALL_DIR}/connectors/transform-field/transform-field/transform-field" "${VENV_DIR}/transform-field/bin/transform-field"
+
+# Create fastsync symlinks
+ln -sf "${INSTALL_DIR}/bin/postgres-to-postgres/postgres-to-postgres" "${VENV_DIR}/pipelinewise/bin/postgres-to-postgres"
+
+# Make executables executable
+chmod +x "${VENV_DIR}/tap-postgres/bin/tap-postgres" 2>/dev/null || true
+chmod +x "${VENV_DIR}/target-postgres/bin/target-postgres" 2>/dev/null || true
+chmod +x "${VENV_DIR}/transform-field/bin/transform-field" 2>/dev/null || true
+chmod +x "${VENV_DIR}/pipelinewise/bin/postgres-to-postgres" 2>/dev/null || true
+
+echo "✓ Connectors setup complete"
+echo ""
+echo "PipelineWise is ready to use!"
+echo "  Config directory: $PIPELINEWISE_HOME"
+echo "  Virtual envs: $VENV_DIR"
+EOF
+
+chmod +x /build/dist/pipelinewise/setup-connectors.sh
+
+echo "✓ Executables organized in connectors/ structure"
+
+# Create plw wrapper script (updated to run connector setup on first use)
+cat > /build/dist/pipelinewise/plw << 'EOF'
+#!/usr/bin/env bash
+# PipelineWise standalone wrapper script
+
+# Get the installation directory (where this script is located)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PIPELINEWISE_HOME="${PIPELINEWISE_HOME:-${HOME}/.pipelinewise}"
+
+# Export PIPELINEWISE_HOME so PipelineWise knows where to find .virtualenvs
+export PIPELINEWISE_HOME
+
+# Ensure connectors are set up
+if [ ! -d "${PIPELINEWISE_HOME}/.virtualenvs" ]; then
+    echo "Setting up connectors for first-time use..."
+    "${SCRIPT_DIR}/setup-connectors.sh"
+fi
+
+# Handle --dir argument to make it compatible with Docker version
+ARGS=()
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --dir)
+            # Convert relative path to absolute
+            if [ -n "$2" ]; then
+                DIR_PATH=$(cd "$(dirname "$2")" 2>/dev/null && pwd)/$(basename "$2")
+                if [ ! -d "$DIR_PATH" ]; then
+                    echo "Error: directory not exists $DIR_PATH"
+                    exit 1
+                fi
+                ARGS+=("--dir" "$DIR_PATH")
+                shift 2
+            else
+                echo "Error: --dir requires an argument"
+                exit 1
+            fi
+            ;;
+        *)
+            ARGS+=("$1")
+            shift
+            ;;
+    esac
+done
+
+# Run PipelineWise executable with arguments
+exec "${SCRIPT_DIR}/pipelinewise" "${ARGS[@]}"
+EOF
+
+chmod +x /build/dist/pipelinewise/plw
+
+# Create env.sh for easy environment setup (auto-runs connector setup if needed)
+cat > /build/dist/pipelinewise/env.sh << 'EOF'
+#!/bin/bash
+# PipelineWise Environment Setup
+# Source this file: source env.sh
+
+export PIPELINEWISE_HOME="${PIPELINEWISE_HOME:-${HOME}/.pipelinewise}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export PATH="$SCRIPT_DIR:$PATH"
+
+# Ensure connectors are set up
+if [ ! -d "${PIPELINEWISE_HOME}/.virtualenvs" ]; then
+    echo "Setting up connectors for first-time use..."
+    "${SCRIPT_DIR}/setup-connectors.sh"
+fi
+
+echo "PipelineWise environment configured"
+echo "  PIPELINEWISE_HOME: $PIPELINEWISE_HOME"
+echo "  Installation: $SCRIPT_DIR"
+echo ""
+echo "Usage:"
+echo "  pipelinewise --help"
+echo "  pipelinewise --version"
+echo "  plw --help          # Wrapper script with Docker-like interface"
+EOF
+
+chmod +x /build/dist/pipelinewise/env.sh
+
+echo "✓ Wrapper scripts created"
 
 echo ""
 echo "Build complete!"
 ls -lh /build/dist/pipelinewise/
 if command -v file >/dev/null 2>&1; then
-  file /build/dist/pipelinewise/pipelinewise
+    file /build/dist/pipelinewise/pipelinewise
 else
-  echo "Skipping binary type check (file command not available)."
+    echo "Skipping binary type check (file command not available)."
 fi
 echo ""
 echo "Testing binary..."
@@ -542,15 +695,17 @@ ls -lh /build/dist/pipelinewise-rhel7.tar.xz
 echo ""
 echo "Creating self-extracting installer..."
 
-# Run the installer creation script
-if /build/create-self-extracting-installer.sh; then
-    ls -lh /build/dist/pipelinewise-installer.run
-    echo "✓ Installer created successfully"
+# Check if installer script exists
+if [ -f /build/create-self-extracting-installer.sh ]; then
+    # Run the installer creation script
+    if /build/create-self-extracting-installer.sh; then
+        ls -lh /build/dist/pipelinewise-installer.run
+        echo "✓ Installer created successfully"
+    else
+        echo "⚠ Installer creation failed, but tarball is available"
+    fi
 else
-    echo "⚠ Installer creation failed, but tarball is available"
-fi
-else
-  echo "⚠ Installer script not found, skipping..."
+    echo "⚠ Installer script not found, skipping..."
 fi
 
 echo ""
@@ -587,21 +742,21 @@ echo ""
 echo "Distribution files:"
 echo "  Tarball:   dist/pipelinewise-rhel7.tar.xz"
 if [ -f /build/dist/pipelinewise-installer.run ]; then
-  echo "  Installer: dist/pipelinewise-installer.run"
+    echo "  Installer: dist/pipelinewise-installer.run"
 fi
 echo ""
 echo "Tarball deployment:"
 echo "  1. Copy: scp dist/pipelinewise-rhel7.tar.xz user@rhel7-host:/path/"
 echo "  2. Extract: tar -xJf pipelinewise-rhel7.tar.xz"
-echo "  3. Setup: cd pipelinewise && ./setup-connectors.sh"
-echo "  4. Run: ./pipelinewise --help"
+echo "  3. Run: cd pipelinewise && source env.sh"
+echo "  4. Use: pipelinewise --help or plw --help"
 echo ""
 if [ -f /build/dist/pipelinewise-installer.run ]; then
-  echo "Installer deployment (recommended):"
-  echo "  1. Copy: scp dist/pipelinewise-installer.run user@rhel7-host:/path/"
-  echo "  2. Install: sudo ./pipelinewise-installer.run"
-  echo "  3. Run: pipelinewise --help"
-  echo ""
+    echo "Installer deployment (recommended):"
+    echo "  1. Copy: scp dist/pipelinewise-installer.run user@rhel7-host:/path/"
+    echo "  2. Install: ./pipelinewise-installer.run"
+    echo "  3. Use: cd /install/path && source env.sh"
+    echo ""
 fi
 
 echo "=============================================="

@@ -25,6 +25,7 @@ PROJECT_ROOT="$SCRIPT_DIR"
 # Configuration - adapted for RHEL7 standalone deployment
 DIST_DIR="$PROJECT_ROOT/dist"
 PORTABLE_TARBALL="$DIST_DIR/pipelinewise-rhel7.tar.xz"
+PIPELINEWISE_INSTALLER="$DIST_DIR/pipelinewise-installer.run"
 PIPELINEWISE_CONTAINER="pipelinewise-test-centos7"
 
 # Test configuration
@@ -217,6 +218,14 @@ function check_prerequisites() {
         return 1
     fi
     success "docker-compose is available"
+
+    # Check jq for JSON parsing
+    if ! command -v jq >/dev/null 2>&1; then
+        logerr "jq is not installed (required for report generation)"
+        logerr "Install with: sudo apt-get install jq   or   sudo yum install jq"
+        return 1
+    fi
+    success "jq is available"
 
     # Check PipelineWise RHEL7 tarball
     if [ ! -f "$PORTABLE_TARBALL" ]; then
@@ -437,21 +446,56 @@ function stop_containers() {
 function deploy_pipelinewise() {
     log "Deploying PipelineWise to CentOS 7 container..."
 
-    # Copy tarball to container
-    if ! docker cp "$PORTABLE_TARBALL" "$PIPELINEWISE_CONTAINER:/tmp/"; then
-        logerr "Failed to copy PipelineWise tarball to container"
-        return 1
+    # Use the .run installer
+    local installer_path="$PIPELINEWISE_INSTALLER"
+    
+    # Check if installer exists, fallback to tarball
+    if [ -f "$installer_path" ]; then
+        log "Using self-extracting installer"
+        
+        # Copy installer to container
+        if ! docker cp "$installer_path" "$PIPELINEWISE_CONTAINER:/tmp/"; then
+            logerr "Failed to copy PipelineWise installer to container"
+            return 1
+        fi
+        
+        # Make installer executable
+        if ! docker exec "$PIPELINEWISE_CONTAINER" chmod +x "/tmp/$(basename "$installer_path")"; then
+            logerr "Failed to make installer executable"
+            return 1
+        fi
+        
+        # Run installer non-interactively with default location
+        if ! docker exec "$PIPELINEWISE_CONTAINER" bash -c "echo '/tmp/pipelinewise' | /tmp/$(basename "$installer_path")"; then
+            logerr "Failed to run PipelineWise installer"
+            return 1
+        fi
+        
+    else
+        log "Installer not found, using tarball extraction"
+        
+        # Copy tarball to container
+        if ! docker cp "$PORTABLE_TARBALL" "$PIPELINEWISE_CONTAINER:/tmp/"; then
+            logerr "Failed to copy PipelineWise tarball to container"
+            return 1
+        fi
+
+        # Extract tarball
+        if ! docker exec "$PIPELINEWISE_CONTAINER" tar -xJf "/tmp/$(basename "$PORTABLE_TARBALL")" -C /tmp/; then
+            logerr "Failed to extract PipelineWise tarball in container"
+            return 1
+        fi
     fi
 
-    # Extract tarball
-    if ! docker exec "$PIPELINEWISE_CONTAINER" tar -xJf "/tmp/$(basename "$PORTABLE_TARBALL")" -C /tmp/; then
-        logerr "Failed to extract PipelineWise tarball in container"
-        return 1
-    fi
-
-    # Verify extraction
+    # Verify installation
     if ! docker exec "$PIPELINEWISE_CONTAINER" ls -la /tmp/pipelinewise/ >/dev/null 2>&1; then
-        logerr "PipelineWise directory not found after extraction"
+        logerr "PipelineWise directory not found after installation"
+        return 1
+    fi
+    
+    # Verify main executable
+    if ! docker exec "$PIPELINEWISE_CONTAINER" /tmp/pipelinewise/pipelinewise --version >/dev/null 2>&1; then
+        logerr "PipelineWise executable not working"
         return 1
     fi
 
@@ -731,10 +775,12 @@ function run_plw_command() {
     log "Running: $desc"
     logv "Command: $cmd"
 
-    # Run PipelineWise command in the CentOS 7 container with PIPELINEWISE_HOME set
-    if ! docker exec "$PIPELINEWISE_CONTAINER" bash -c "cd /tmp/pipelinewise && export PIPELINEWISE_HOME=/tmp/pipelinewise_config && $cmd" > "$log_file" 2>&1; then
+    # Use the plw wrapper which sets PIPELINEWISE_HOME automatically
+    if ! docker exec "$PIPELINEWISE_CONTAINER" bash -c "cd /tmp/pipelinewise && ./plw $cmd" > "$log_file" 2>&1; then
         logerr "PipelineWise command failed: $desc"
         logerr "Check log: $log_file"
+        # Show last lines for quick debugging
+        cat "$log_file" | tail -20 >&2
         return 1
     fi
 
@@ -749,13 +795,13 @@ function test_a_initial_full_sync() {
     start_time=$(date +%s)
 
     # Import tap configuration
-    if ! run_plw_command "./pipelinewise import --dir /tmp/config" "import tap config"; then
+    if ! run_plw_command "import_config --dir /tmp/config" "import tap config"; then
         failure "Test A: Import failed"
         return 1
     fi
 
     # Run initial sync
-    if ! run_plw_command "./pipelinewise run_tap --tap tap_postgres_test --target target_postgres_test" "initial full sync"; then
+    if ! run_plw_command "run_tap --tap tap_postgres_test --target target_postgres_test" "initial full sync"; then
         failure "Test A: Initial sync failed"
         return 1
     fi
@@ -815,7 +861,7 @@ EOF
     start_time=$(date +%s)
 
     # Run incremental sync
-    if ! run_plw_command "./pipelinewise run_tap --tap tap_postgres_test --target target_postgres_test" "incremental sync"; then
+    if ! run_plw_command "run_tap --tap tap_postgres_test --target target_postgres_test" "incremental sync"; then
         failure "Test B: Incremental sync failed"
         return 1
     fi
@@ -850,7 +896,7 @@ EOF
 ) "Adding discount_percent column"
 
     # Run sync
-    if ! run_plw_command "./pipelinewise run_tap --tap tap_postgres_test --target target_postgres_test" "schema change sync"; then
+    if ! run_plw_command "run_tap --tap tap_postgres_test --target target_postgres_test" "schema change sync"; then
         failure "Test C: Schema change sync failed"
         return 1
     fi
@@ -895,13 +941,13 @@ streams:
 EOF
 
     # Import transform config
-    if ! run_plw_command "./pipelinewise import --dir /tmp/config" "import transform config"; then
+    if ! run_plw_command "import_config --dir /tmp/config" "import transform config"; then
         failure "Test D: Import transform config failed"
         return 1
     fi
 
     # Run with transformation
-    if ! run_plw_command "./pipelinewise run_tap --tap tap_postgres_test --target target_postgres_test" "sync with transformation"; then
+    if ! run_plw_command "run_tap --tap tap_postgres_test --target target_postgres_test" "sync with transformation"; then
         failure "Test D: Transformation sync failed"
         return 1
     fi
@@ -951,7 +997,7 @@ EOF
     start_time=$(date +%s)
 
     # Run sync
-    if ! run_plw_command "./pipelinewise run_tap --tap tap_postgres_test --target target_postgres_test" "large volume sync"; then
+    if ! run_plw_command "run_tap --tap tap_postgres_test --target target_postgres_test" "large volume sync"; then
         failure "Test E: Large volume sync failed"
         return 1
     fi
@@ -1160,7 +1206,7 @@ function generate_report() {
     cat > "$report_file" << EOF
 {
   "test_run": {
-    "timestamp": "$(date -Iseconds)",
+    "timestamp": "$(date '+%Y-%m-%dT%H:%M:%S%z')",
     "duration_seconds": $SECONDS,
     "quick_mode": $QUICK_MODE,
     "full_mode": $FULL_MODE,
@@ -1213,12 +1259,10 @@ Test Results:
 EOF
 
     for test_result in "${TEST_RESULTS[@]}"; do
-        local test_name
-        local status
-        local details
-        test_name=$(echo "$test_result" | jq -r '.name')
-        status=$(echo "$test_result" | jq -r '.status')
-        details=$(echo "$test_result" | jq -r '.details // empty')
+        local test_name status details
+        test_name=$(echo "$test_result" | jq -r '.name' 2>/dev/null || echo "unknown")
+        status=$(echo "$test_result" | jq -r '.status' 2>/dev/null || echo "ERROR")
+        details=$(echo "$test_result" | jq -r '.details // empty' 2>/dev/null || echo "")
 
         printf "%-25s %-8s %s\n" "$test_name" "$status" "$details" >> "$summary_file"
     done
@@ -1269,8 +1313,12 @@ function main() {
         load_source_data
         generate_pipelinewise_configs
 
-        # Copy configs to container
-        docker cp "$CONFIG_DIR" "$PIPELINEWISE_CONTAINER:/tmp/"
+        # Copy configs to container - use trailing slash to copy contents into /tmp/config/
+        if ! docker cp "$CONFIG_DIR/." "$PIPELINEWISE_CONTAINER:/tmp/config/"; then
+            logerr "Failed to copy configs to container"
+            exit 1
+        fi
+        success "Configs copied to container"
     else
         log "Skipping setup (--skip-setup specified)"
         if ! check_containers; then

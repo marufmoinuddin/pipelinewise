@@ -1,0 +1,129 @@
+2025-12-20 08:04:56 [INFO] Starting PipelineWise PostgreSQL E2E Tests (RHEL7 Standalone)
+2025-12-20 08:04:56 [INFO] Test directory: /mnt/Storage/maruf/git/pipelinewise/test_results
+2025-12-20 08:04:56 [INFO] Checking prerequisites...
+2025-12-20 08:04:56 ✅ Docker is available
+2025-12-20 08:04:56 ✅ docker-compose is available
+2025-12-20 08:04:56 ✅ jq is available
+2025-12-20 08:04:56 ✅ PipelineWise RHEL7 tarball found
+2025-12-20 08:04:56 ✅ Required ports (5433, 5434) are available
+2025-12-20 08:04:56 ✅ Sufficient disk space available
+2025-12-20 08:04:56 [INFO] Starting Docker containers...
+2025-12-20 08:04:57 [INFO] Waiting for database on pipelinewise_test_source:5433...
+2025-12-20 08:04:59 ✅ Database ready on pipelinewise_test_source:5433
+2025-12-20 08:04:59 [INFO] Waiting for database on pipelinewise_test_target:5434...
+2025-12-20 08:04:59 ✅ Database ready on pipelinewise_test_target:5434
+2025-12-20 08:04:59 ✅ PipelineWise container ready
+2025-12-20 08:04:59 ✅ All containers are ready
+2025-12-20 08:04:59 [INFO] Deploying PipelineWise to CentOS 7 container...
+2025-12-20 08:04:59 [INFO] Using self-extracting installer
+[0;34m=============================================[0m
+[0;34m  PipelineWise v0.73.0 Installer[0m
+[0;34m  RHEL 7+ Standalone Distribution[0m
+[0;34m=============================================[0m
+
+[0;34mℹ[0m Checking system requirements...
+[0;32m✓[0m GLIBC version: 2.17 (>= 2.17 required)
+[0;32m✓[0m Disk space: 154981MB available
+
+[0;34mInstallation Directory[0m
+Please enter the directory where PipelineWise will be installed.
+The directory will be created if it doesn't exist.
+
+Install to [/root/pipelinewise]: [0;32m✓[0m Installation directory: /tmp/pipelinewise
+
+[0;34mℹ[0m Extracting PipelineWise binaries...
+[0;32m✓[0m Extraction complete
+
+[0;34mℹ[0m Configuring PipelineWise environment...
+[0;32m✓[0m Executables configured
+[0;32m✓[0m Environment script created: env.sh
+[0;34mℹ[0m Setting up connectors...
+Setting up PipelineWise connectors...
+  Installation directory: /tmp/pipelinewise
+  PipelineWise home: /root/.pipelinewise
+✓ Connectors setup complete
+
+PipelineWise is ready to use!
+  Config directory: /root/.pipelinewise
+  Virtual envs: /root/.pipelinewise/.virtualenvs
+[0;32m✓[0m Connector setup completed
+
+[0;34mℹ[0m Testing installation...
+[0;32m✓[0m Main executable: PipelineWise 0.73.0 - Command Line Interface
+
+[0;34m=============================================[0m
+[0;34m  PipelineWise v0.73.0 Installer[0m
+[0;34m  RHEL 7+ Standalone Distribution[0m
+[0;34m=============================================[0m
+
+[0;32m✓[0m Installation completed successfully!
+
+[0;34mInstallation Details:[0m
+  Location: /tmp/pipelinewise
+  Version: 0.73.0
+  SCRAM Authentication: Supported (PostgreSQL 17 libpq)
+
+[0;34mQuick Start:[0m
+  1. Configure environment:
+     cd /tmp/pipelinewise
+     source env.sh
+
+  2. Verify installation:
+     pipelinewise --version
+
+  3. Import configuration:
+     pipelinewise import_config --dir /path/to/config
+
+[0;34mDocumentation:[0m
+  https://github.com/transferwise/pipelinewise
+
+[0;32mEnjoy using PipelineWise![0m
+
+2025-12-20 08:05:11 ✅ PipelineWise deployed successfully
+2025-12-20 08:05:11 [INFO] Setting up source database...
+2025-12-20 08:05:12 ✅ Source database setup complete
+2025-12-20 08:05:12 [INFO] Setting up target database...
+2025-12-20 08:05:12 ✅ Target database setup complete
+2025-12-20 08:05:12 [INFO] Generating test data...
+2025-12-20 08:05:12 ✅ Test data generation complete
+2025-12-20 08:05:12 [INFO] Loading data into source database...
+2025-12-20 08:05:13 ✅ Source data loaded
+2025-12-20 08:05:13 [INFO] Generating PipelineWise configurations...
+2025-12-20 08:05:13 ✅ PipelineWise configurations generated
+2025-12-20 08:05:13 ✅ Configs copied to container
+2025-12-20 08:05:13 [INFO] === TEST F: SCRAM Authentication Verification ===
+Password for user postgres: 
+psql: error: connection to server on socket "/var/run/postgresql/.s.PGSQL.5432" failed: fe_sendauth: no password supplied
+2025-12-20 08:05:14 ✅ Test F: SCRAM Auth - PASSED (PostgreSQL )
+2025-12-20 08:05:14 [INFO] === TEST A: Initial Full Sync ===
+2025-12-20 08:05:14 [INFO] Running: import tap config
+2025-12-20 08:05:15 [ERROR] PipelineWise command failed: import tap config
+2025-12-20 08:05:15 [ERROR] Check log: /mnt/Storage/maruf/git/pipelinewise/test_results/logs/import_tap_config.log
+time=2025-12-20 02:05:14 logger_name=pipelinewise.cli.config log_level=INFO message=SAVING CONFIG
+time=2025-12-20 02:05:14 logger_name=pipelinewise.cli.config log_level=INFO message=SAVING MAIN CONFIG JSON to /root/.pipelinewise/config.json
+time=2025-12-20 02:05:14 logger_name=pipelinewise.cli.config log_level=INFO message=SAVING TARGET JSONS to /root/.pipelinewise/target_postgres_test/config.json
+time=2025-12-20 02:05:14 logger_name=pipelinewise.cli.config log_level=INFO message=SAVING TAP JSONS to /root/.pipelinewise/target_postgres_test/tap_postgres_test
+time=2025-12-20 02:05:14 logger_name=pipelinewise.cli.pipelinewise log_level=INFO message=ACTIVATING TAP STREAM SELECTIONS...
+time=2025-12-20 02:05:14 logger_name=pipelinewise.cli.pipelinewise log_level=INFO message=Discovering tap_postgres_test (tap-postgres) tap in target_postgres_test (target-postgres) target...
+time=2025-12-20 02:05:14 logger_name=pipelinewise.cli.commands log_level=ERROR message=/bin/bash: /root/.pipelinewise/.virtualenvs/tap-postgres/bin/tap-postgres: Is a directory
+
+time=2025-12-20 02:05:14 logger_name=pipelinewise.cli.pipelinewise log_level=INFO message=
+            -------------------------------------------------------
+            IMPORTING YAML CONFIGS FINISHED
+            -------------------------------------------------------
+                Total targets to import        : 1
+                Total taps to import           : 1
+                Taps imported successfully     : 0
+                Taps deleted                   : 0
+                Taps failed to import          : ['target_postgres_test - tap_postgres_test: /bin/bash: /root/.pipelinewise/.virtualenvs/tap-postgres/bin/tap-postgres: Is a directory\n']
+                Runtime                        : 0:00:00.002651
+            -------------------------------------------------------
+            
+2025-12-20 08:05:15 ❌ Test A: Import failed
+2025-12-20 08:05:15 [ERROR] Test failed and --continue-on-error not specified
+2025-12-20 08:05:15 [INFO] Reports generated:
+2025-12-20 08:05:15 [INFO]   Summary: /mnt/Storage/maruf/git/pipelinewise/test_results/test_summary.txt
+2025-12-20 08:05:15 [INFO]   JSON: /mnt/Storage/maruf/git/pipelinewise/test_results/test_report.json
+2025-12-20 08:05:15 [INFO] Stopping and removing containers...
+2025-12-20 08:05:26 ✅ Containers stopped and cleaned up
+2025-12-20 08:05:26 ❌ Some tests failed. Check logs in: /mnt/Storage/maruf/git/pipelinewise/test_results/logs
